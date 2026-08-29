@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mindrail:schema:domain:v1:permission-decision",
+  "title": "PermissionDecision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "workspaceId", "requestId", "createdAt", "sequence", "outcome", "basis", "decidedBy", "reasonCode"],
+  "properties": {
+    "id": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "workspaceId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "requestId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "createdAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "outcome": { "type": "string", "enum": ["ALLOW", "DENY", "HUMAN_REQUIRED"] },
+    "basis": { "type": "string", "enum": ["policy", "human"] },
+    "decidedBy": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/ActorRef" },
+    "reasonCode": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/NamespacedName" },
+    "policyRef": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/PolicyRef" },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "supersedesDecisionId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "basis": { "const": "policy" } },
+        "required": ["basis"]
+      },
+      "then": {
+        "required": ["policyRef"],
+        "properties": {
+          "decidedBy": {
+            "allOf": [
+              { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/ActorRef" },
+              {
+                "properties": { "type": { "const": "system" } },
+                "required": ["type"]
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "basis": { "const": "human" } },
+        "required": ["basis"]
+      },
+      "then": {
+        "properties": {
+          "outcome": { "enum": ["ALLOW", "DENY"] },
+          "decidedBy": {
+            "allOf": [
+              { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/ActorRef" },
+              {
+                "properties": { "type": { "const": "human" } },
+                "required": ["type"]
+              }
+            ]
+          }
+        },
+        "not": { "required": ["policyRef"] }
+      }
+    }
+  ]
+}
