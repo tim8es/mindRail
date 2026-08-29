@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { ApplicationDispatcher } from '../../src/application/ports.ts';
 import { createHttpTransport } from '../../src/transports/http/adapter.ts';
 
 const principal = { subject: 'principal-1' };
@@ -27,15 +28,15 @@ function jsonRequest(path: string, body: unknown, headers: HeadersInit = {}) {
 }
 
 function createDependencies() {
-  const dispatchCommand = vi.fn(async () => ({
-    protocolVersion: '0.1' as const,
+  const dispatchCommand = vi.fn<ApplicationDispatcher['dispatchCommand']>(async () => ({
+    protocolVersion: '0.1',
     commandId: 'cmd-1',
     correlationId: 'corr-1',
     replayed: false,
     result: { id: 'goal-1' },
   }));
-  const dispatchQuery = vi.fn(async () => ({
-    protocolVersion: '0.1' as const,
+  const dispatchQuery = vi.fn<ApplicationDispatcher['dispatchQuery']>(async () => ({
+    protocolVersion: '0.1',
     correlationId: 'corr-1',
     result: { id: 'ws-1' },
   }));
