@@ -135,7 +135,7 @@ describe('durable mutation receipt parity', () => {
 
   it('replays Checkpoint append without duplicating history', async () => {
     const path = databasePath();
-    let seeded = await seedClaim(path);
+    const seeded = await seedClaim(path);
     const progress = checkpoint(
       'ws-a',
       'task-a',
