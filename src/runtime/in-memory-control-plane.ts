@@ -267,6 +267,7 @@ export class InMemoryControlPlane {
   execute(command: RetryTaskCommand): ProtocolResponse<Task>;
   execute(command: CancelTaskCommand): ProtocolResponse<CancelTaskResult>;
   execute(command: CancelGoalCommand): ProtocolResponse<CancelGoalResult>;
+  execute(command: ProtocolCommand): ProtocolResponse;
   execute(command: ProtocolCommand): ProtocolResponse {
     const validation = validateProtocolCommand(command);
     if (!validation.valid) {
