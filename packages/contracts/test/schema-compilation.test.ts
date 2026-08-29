@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createDomainAjv, loadDomainSchemas } from '../../../scripts/contracts/schema-registry.mjs';
+import { createDomainAjv, loadDomainSchemas } from '../../../scripts/contracts/schema-registry.ts';
 
 describe('domain schema registry', () => {
   it('loads the complete v1 schema set with unique ids', async () => {
