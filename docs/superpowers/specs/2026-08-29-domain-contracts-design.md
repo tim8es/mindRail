@@ -12,7 +12,7 @@ Create the smallest stable domain contract layer that later MindRail protocol, r
 The slice is successful when:
 
 1. canonical JSON Schema Draft 2020-12 contracts exist for the v1 domain;
-2. every schema is structurally validated by a real JSON Schema validator;
+2. every schema is structurally validated by a real Draft 2020-12 validator;
 3. representative valid/invalid fixtures prove important boundaries;
 4. deterministic TypeScript bindings are generated from the schemas;
 5. CI detects generated-code drift;
@@ -22,7 +22,7 @@ The slice is successful when:
 
 ### 2.1 Canonical representation
 
-`schemas/domain/v1/` is the authority. Generated TypeScript is a derivative build artifact.
+`schemas/domain/v1/` is the authority. Generated TypeScript is derivative build output.
 
 ```text
 JSON Schema Draft 2020-12
@@ -46,7 +46,7 @@ urn:mindrail:schema:domain:v1:task
 urn:mindrail:schema:domain:v1:common
 ```
 
-This avoids coupling schema identity to a website or deployment hostname.
+Schema identity therefore does not depend on a website or deployment hostname.
 
 ### 2.3 Resource categories
 
@@ -105,29 +105,29 @@ scripts/
 └── generate-contracts.*
 ```
 
-`common.schema.json` contains shared `$defs` rather than creating one file per primitive/value object.
+`common.schema.json` contains shared `$defs` rather than one file per primitive/value object.
 
-The exact maintained generation library is an implementation choice, not protocol semantics. It must be pinned, deterministic, offline after dependency installation, and compatible with the chosen schemas.
+The exact maintained generation library is an implementation choice, not protocol semantics. It must be pinned, deterministic, offline after dependency installation, and compatible with these schemas.
 
 ## 4. Shared primitives and value objects
 
-All canonical object schemas reject unknown top-level fields with `additionalProperties: false`, except the explicitly bounded `AuditEvent.attributes` map described later.
+All canonical object schemas reject unknown fields with `additionalProperties: false`, except the explicitly bounded `AuditEvent.attributes` map.
 
 ### 4.1 EntityId
 
-Opaque identifier. Storage implementation is intentionally unspecified.
+Opaque identifier. Storage format is intentionally unspecified.
 
 - type: string
 - length: 1–128
 - pattern: `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`
 
-No UUID, database sequence, Cloudflare identifier, GitHub identifier, or provider-specific format is part of the contract.
+No UUID, database sequence, Cloudflare identifier, GitHub identifier, or provider-specific id format is part of the contract.
 
 ### 4.2 UtcDateTime
 
 - type: string
 - JSON Schema format: `date-time`
-- must use UTC `Z` form
+- pattern additionally requires a trailing `Z`
 
 Examples:
 
@@ -136,13 +136,15 @@ Examples:
 2026-08-29T00:32:08.123Z
 ```
 
+Offset forms such as `+03:00` are structurally valid RFC 3339 timestamps but are intentionally rejected by the MindRail v1 canonical contract so persisted timestamps are normalized to UTC.
+
 ### 4.3 NamespacedName
 
 Used for capabilities, permissions, event types, resource types, and reason codes.
 
 - type: string
 - length: 1–128
-- lowercase-oriented pattern allowing segments separated by `.`, `_`, or `-`
+- pattern: `^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`
 
 Examples:
 
@@ -160,7 +162,7 @@ type: system | human | agent
 id: EntityId
 ```
 
-An opaque human id does not define authentication or account ownership semantics.
+An opaque human id does not define authentication, account, or ownership semantics.
 
 ### 4.5 ResourceRef
 
@@ -180,7 +182,7 @@ sha256?: exactly 64 lowercase hex chars
 sizeBytes?: integer >= 0
 ```
 
-Evidence content is not embedded in the domain record.
+Evidence content is never embedded in this value object.
 
 ### 4.7 PolicyRef
 
@@ -189,7 +191,7 @@ id: EntityId
 version: string, 1–128 chars
 ```
 
-`version` may later be a Git commit SHA, immutable config digest, or another explicit policy version. The domain contract does not create a persistent `Policy` entity.
+`version` may later be a Git commit SHA, immutable config digest, or another explicit policy version. This does not create a persistent `Policy` entity.
 
 ### 4.8 Reason
 
@@ -198,7 +200,7 @@ code: NamespacedName
 summary: string, 1–1000 chars
 ```
 
-Used for durable machine-readable + human-readable status/decision explanations without arbitrary payloads.
+Used for durable machine-readable plus human-readable explanations without arbitrary payloads.
 
 ## 5. Mutable resource base semantics
 
@@ -214,7 +216,7 @@ updatedAt: UtcDateTime
 
 `Workspace` has the same fields except `workspaceId`.
 
-Runtime authority, not an agent client, will authoritatively assign ids, revisions, and timestamps. Future protocol commands operate on domain resources rather than allowing clients to submit arbitrary authoritative resource snapshots.
+Runtime authority, not an agent client, authoritatively assigns ids, revisions, and timestamps. Future protocol commands operate on domain resources rather than allowing clients to submit arbitrary authoritative snapshots.
 
 `revision` begins at `1` and increases monotonically for every accepted mutation.
 
@@ -263,7 +265,7 @@ successCriteria: array<string>, 1–32 items, each 1–1000 chars
 status: active | succeeded | failed | cancelled
 ```
 
-A Goal is not a Task and is not a Plan. Plan is deliberately not a persisted v1 concept.
+A Goal is not a Task and is not a Plan. `Plan` is deliberately not a persisted v1 concept.
 
 ## 8. Task
 
@@ -296,7 +298,8 @@ Cross-record invariants:
 
 - dependency ids reference tasks in the same workspace and goal;
 - a task cannot depend on itself;
-- task dependencies form an acyclic graph.
+- task dependencies form an acyclic graph;
+- an Agent may be assigned only when `Task.requiredCapabilities` is a subset of `Agent.capabilities`.
 
 Exact transition rules and retry behavior belong to the deterministic runtime/state-machine slice, not this structural schema slice.
 
@@ -317,7 +320,7 @@ status: active | disabled
 capabilities: unique array<NamespacedName>, 0–64 items
 ```
 
-No vendor enum is introduced. `Codex`, `ChatGPT`, `Claude`, and custom runtimes are integration concerns; capabilities are the core scheduling contract.
+No vendor enum is introduced. Codex, ChatGPT, Claude, and custom runtimes are integration concerns; capabilities are the core scheduling contract.
 
 ## 10. Session
 
@@ -366,6 +369,7 @@ expiresAt: UtcDateTime
 Binding invariants:
 
 - task and session belong to the same workspace;
+- the session's Agent satisfies the Task's required capabilities at assignment time;
 - at most one active lease exists for a task;
 - fencing tokens increase monotonically for successive leases on one task;
 - a stale fencing token cannot authorize checkpoint, completion, or task-scoped permission mutation.
@@ -397,13 +401,13 @@ Optional:
 progressPercent?: integer 0–100
 ```
 
-Checkpoint content is intentionally bounded. Large logs/files are evidence artifacts referenced by `EvidenceRef`.
+Large logs/files are external evidence artifacts referenced by `EvidenceRef`.
 
 A checkpoint is append-only after admission.
 
 ## 13. PermissionRequest
 
-Purpose: immutable request by an executing session for authority not already granted by its current bounded context/policy.
+Purpose: immutable request by an executing Session for authority not already granted by its bounded context/policy.
 
 Required fields:
 
@@ -425,7 +429,7 @@ Optional:
 resource?: ResourceRef
 ```
 
-Permission requests are task-scoped in v1. Bootstrap/static grants are configuration/context concerns and do not require a synthetic PermissionRequest.
+Permission requests are task-scoped in v1. Bootstrap/static grants are configuration/context concerns and do not require synthetic PermissionRequest records.
 
 ## 14. PermissionDecision
 
@@ -453,14 +457,18 @@ reason?: string, 1–2000 chars
 supersedesDecisionId?: EntityId
 ```
 
-Rules:
+Structural/semantic rules:
 
-- `basis = policy` requires `policyRef`;
-- `HUMAN_REQUIRED` is non-authorizing;
-- a later human `ALLOW` or `DENY` may supersede an interim `HUMAN_REQUIRED` decision;
-- decisions for one request have strictly increasing `sequence`;
+- `basis = policy` requires `policyRef` and `decidedBy.type = system`;
+- `basis = human` requires `decidedBy.type = human`;
+- `outcome = HUMAN_REQUIRED` is allowed only with `basis = policy`;
+- a human decision may only be `ALLOW` or `DENY`;
+- `HUMAN_REQUIRED` grants no authority;
+- `sequence = 1` starts the chain and does not supersede another decision;
+- every decision with `sequence > 1` must include `supersedesDecisionId` referencing the immediately preceding decision for that request;
+- decisions for one request have strictly increasing contiguous sequence numbers;
 - historical decisions are never edited in place;
-- future runtime logic must ensure there is no ambiguous pair of simultaneously final decisions.
+- future runtime logic must prevent ambiguous simultaneously-final decisions.
 
 This avoids introducing a separate persistent `HumanDecision` concept before its lifecycle proves independently necessary.
 
@@ -494,7 +502,7 @@ attributes?: bounded flat scalar map
 `attributes` is the one intentional dynamic object surface in v1:
 
 - max 16 properties;
-- property names must satisfy `NamespacedName`;
+- property names satisfy `NamespacedName`;
 - values may only be string/number/boolean/null;
 - strings max 500 chars;
 - no nested objects;
@@ -509,22 +517,30 @@ The following are binding even where JSON Schema cannot prove them without stora
 
 1. every non-Workspace record belongs to exactly one Workspace;
 2. every reference between domain records remains within that Workspace;
-3. Task → Goal belongs to same Workspace;
-4. Task dependency → Task belongs to same Workspace and Goal;
-5. Session → Agent belongs to same Workspace;
-6. Lease → Task/Session belongs to same Workspace;
-7. Checkpoint and PermissionRequest references belong to same Workspace;
-8. PermissionDecision → PermissionRequest belongs to same Workspace.
+3. Task → Goal belongs to the same Workspace;
+4. Task dependency → Task belongs to the same Workspace and Goal;
+5. Session → Agent belongs to the same Workspace;
+6. Lease → Task/Session belongs to the same Workspace;
+7. Checkpoint and PermissionRequest references belong to the same Workspace;
+8. PermissionDecision → PermissionRequest belongs to the same Workspace.
 
 Future persistence adapters must make cross-workspace reference acceptance impossible or deterministically reject it.
 
-## 17. Concurrency invariants
+## 17. Scheduling and concurrency invariants
 
-`revision` and `fencingToken` solve different problems and are both required.
+### 17.1 Capability satisfaction
 
-### Revision
+At task assignment time:
 
-Protects a mutable resource from lost updates:
+```text
+Task.requiredCapabilities ⊆ Agent.capabilities
+```
+
+Capabilities are exact namespaced strings in v1. There is no wildcard, hierarchy, implication graph, or fuzzy capability matching in this slice.
+
+### 17.2 Revision
+
+`revision` protects mutable resources from lost updates:
 
 ```text
 read Task revision 17
@@ -533,9 +549,9 @@ accepted → revision 18
 stale expectedRevision → reject
 ```
 
-### Fencing token
+### 17.3 Fencing token
 
-Protects a task from a stale execution owner:
+`fencingToken` protects a task from a stale execution owner:
 
 ```text
 Session A gets token 4
@@ -546,6 +562,8 @@ Session A wakes up and submits token 4
 ```
 
 This invariant must survive retries, delayed network delivery, and process resurrection.
+
+`revision` and `fencingToken` solve different problems and are both required.
 
 ## 18. Generated TypeScript contract
 
@@ -571,37 +589,42 @@ The package does not expose a cloud/database implementation and does not make a 
 
 The implementation slice must include executable tests for:
 
-### Schema compilation
+### 19.1 Schema compilation
 
 - every canonical schema compiles under a Draft 2020-12 validator in strict mode;
 - all `$ref` targets resolve;
 - all `$id` values are unique.
 
-### Positive fixtures
+### 19.2 Positive fixtures
 
 At least one minimal valid fixture for every top-level domain schema.
 
-### Negative fixtures
+### 19.3 Negative fixtures
 
 Representative rejection tests for:
 
 - unknown fields;
 - invalid ids;
 - non-UTC timestamps;
+- invalid `NamespacedName` values;
 - text/array bounds;
 - duplicate capabilities/dependencies;
 - invalid enum values;
 - malformed SHA-256 digest;
 - nested/unbounded AuditEvent attributes;
-- policy-basis PermissionDecision without `policyRef`.
+- policy-basis PermissionDecision without `policyRef`;
+- policy-basis PermissionDecision attributed to a non-system actor;
+- human-basis PermissionDecision attributed to a non-human actor;
+- human-basis `HUMAN_REQUIRED`;
+- superseding PermissionDecision without `supersedesDecisionId`.
 
-Cross-record invariants such as dependency cycles and active-lease uniqueness are documented here but implemented/tested in the local runtime slice because they require state lookup.
+Cross-record invariants such as dependency cycles, capability subset matching, active-lease uniqueness, fencing-token monotonicity, and decision-chain continuity are documented here but implemented/tested in the local runtime slice because they require state lookup.
 
-### Generation drift
+### 19.4 Generation drift
 
-CI must regenerate TypeScript bindings and fail if the committed generated output differs.
+CI regenerates TypeScript bindings and fails if committed generated output differs.
 
-### Existing quality gate
+### 19.5 Existing quality gate
 
 The new contracts checks become part of the existing `pnpm check`; no parallel quality command becomes an alternative authority.
 
@@ -614,7 +637,7 @@ Domain contracts must not create convenient secret/log dumping grounds.
 - no arbitrary nested JSON payloads;
 - no raw binary/base64 artifact bodies;
 - no unbounded strings or arrays;
-- large evidence remains external and is referenced;
+- large evidence remains external and referenced;
 - audit attributes remain shallow and bounded;
 - future adapters may impose stricter limits than these canonical maxima.
 
@@ -652,6 +675,7 @@ Do not implement:
 - agent runtime integrations;
 - Plan/Project/Workflow/Policy/HumanDecision entities;
 - event sourcing;
+- wildcard/fuzzy capability matching;
 - generic extension/plugin payloads.
 
 Those are later slices built on these contracts.
@@ -664,5 +688,5 @@ The written design is implementation-ready when:
 2. no unresolved placeholder/TBD remains;
 3. entity/value-object boundaries above are unambiguous;
 4. schema-level versus runtime-level invariants are clearly separated;
-5. a new contributor could implement the schemas/tests/generation without inventing missing domain semantics;
-6. implementation does not need to choose a cloud, database, transport, or model vendor.
+5. a new contributor could implement schemas/tests/generation without inventing missing domain semantics;
+6. implementation does not need to choose a cloud, database, transport, authentication provider, or model vendor.
