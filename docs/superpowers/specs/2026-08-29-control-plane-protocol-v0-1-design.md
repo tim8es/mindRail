@@ -2,7 +2,7 @@
 
 - **Status:** Written review pending
 - **Date:** 2026-08-29
-- **Depends on:** ADR-0001, proposed ADR-0003, proposed ADR-0004
+- **Depends on:** ADR-0001, ADR-0003, proposed ADR-0004
 - **Domain contract:** `schemas/domain/v1/`
 - **Scope:** Transport-neutral protocol semantics and HTTP/MCP mappings only. No HTTP/MCP server, persistence, Cloudflare runtime, orchestration engine, policy-engine implementation, or provider integration.
 
@@ -944,4 +944,4 @@ The written design is review-ready when:
 9. no arbitrary JSON metadata/action escape hatch exists;
 10. external credentials/sandbox restrictions remain independent;
 11. no unresolved placeholder remains;
-12. ADR-0004 remains Proposed until ADR-0003 is accepted and protocol review is complete.
+12. ADR-0004 remains Proposed until protocol review is complete.
