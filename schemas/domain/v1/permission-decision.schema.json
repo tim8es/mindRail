@@ -33,6 +33,7 @@
             "allOf": [
               { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/ActorRef" },
               {
+                "type": "object",
                 "properties": { "type": { "const": "system" } },
                 "required": ["type"]
               }
@@ -53,6 +54,7 @@
             "allOf": [
               { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/ActorRef" },
               {
+                "type": "object",
                 "properties": { "type": { "const": "human" } },
                 "required": ["type"]
               }
