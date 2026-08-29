@@ -683,12 +683,14 @@ export class InMemoryControlPlane {
           evidence: command.evidence,
         });
       case 'RetryTask':
+        this.assertControllerActor(command);
         return this.retryTask({
           workspaceId: command.workspaceId,
           taskId: command.taskId,
           expectedTaskRevision: command.expectedTaskRevision,
         });
       case 'CancelTask':
+        this.assertControllerActor(command);
         return this.cancelTask({
           workspaceId: command.workspaceId,
           taskId: command.taskId,
@@ -696,6 +698,7 @@ export class InMemoryControlPlane {
           reason: command.reason,
         });
       case 'CancelGoal':
+        this.assertControllerActor(command);
         return this.cancelGoal({
           workspaceId: command.workspaceId,
           goalId: command.goalId,
@@ -703,6 +706,18 @@ export class InMemoryControlPlane {
           reason: command.reason,
         });
     }
+  }
+
+  private assertControllerActor(
+    command: RetryTaskCommand | CancelTaskCommand | CancelGoalCommand,
+  ): void {
+    if (command.actor.type === 'human' || command.actor.type === 'system') {
+      return;
+    }
+    throw new RuntimeError(
+      'ACTOR_NOT_AUTHORIZED',
+      `Actor ${command.actor.type}:${command.actor.id} is not authorized for ${command.command}.`,
+    );
   }
 
   private protocolSuccess(
