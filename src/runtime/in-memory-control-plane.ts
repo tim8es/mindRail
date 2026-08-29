@@ -101,7 +101,14 @@ export interface RenewLeaseInput {
   expectedLeaseRevision: number;
 }
 
-export interface ReleaseLeaseInput extends RenewLeaseInput {}
+export interface ReleaseLeaseInput {
+  workspaceId: string;
+  taskId: string;
+  sessionId: string;
+  leaseId: string;
+  fencingToken: number;
+  expectedLeaseRevision: number;
+}
 
 export interface RecordCheckpointInput {
   workspaceId: string;
