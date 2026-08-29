@@ -4,7 +4,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
@@ -26,28 +26,16 @@ jobs:
       - name: Install repository pnpm
         run: npm install --global "$(node -p "require('./package.json').packageManager")"
 
+      - name: Verify toolchain
+        run: |
+          node --version
+          pnpm --version
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Apply union overload correction
-        run: |
-          python - <<'PY'
-          from pathlib import Path
+      - name: Repository quality check
+        run: pnpm check
 
-          path = Path('src/runtime/in-memory-control-plane.ts')
-          source = path.read_text()
-          before = '  execute(command: ProtocolCommand): ProtocolResponse {'
-          after = '  execute(command: ProtocolCommand): ProtocolResponse;\n  execute(command: ProtocolCommand): ProtocolResponse {'
-          if source.count(before) != 1:
-              raise SystemExit(f'expected one execute implementation boundary, found {source.count(before)}')
-          path.write_text(source.replace(before, after, 1))
-          PY
-          pnpm exec prettier --write src/runtime/in-memory-control-plane.ts
-          pnpm typecheck
-          pnpm lint
-          pnpm test test/runtime/control-plane-runtime-surface.test.ts
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/runtime/in-memory-control-plane.ts
-          git commit -m "fix: expose protocol union dispatcher overload"
-          git push origin HEAD:feature/runtime-surface-v0-1
+      - name: Coverage
+        run: pnpm test:coverage
