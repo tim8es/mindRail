@@ -18,7 +18,7 @@ text = replace_once(
 """,
     """export class SqliteD1Database implements D1DatabaseLike {
   private readonly database: DatabaseSync;
-  private failNextBatchAfterStatementCount?: number;
+  private failNextBatchAfterStatementCount: number | undefined;
 
   constructor(path: string) {
 """,
