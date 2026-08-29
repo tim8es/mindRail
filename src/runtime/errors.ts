@@ -10,7 +10,10 @@ export type RuntimeErrorCode =
   | 'IDEMPOTENCY_CONFLICT'
   | 'ACTOR_NOT_AUTHORIZED'
   | 'SESSION_NOT_ACTIVE'
-  | 'CAPABILITY_MISMATCH';
+  | 'CAPABILITY_MISMATCH'
+  | 'PERMISSION_DENIED'
+  | 'HUMAN_DECISION_REQUIRED'
+  | 'POLICY_UNAVAILABLE';
 
 export class RuntimeError extends Error {
   readonly code: RuntimeErrorCode;

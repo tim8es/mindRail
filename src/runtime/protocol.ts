@@ -1,4 +1,4 @@
-import type { ActorRef, EvidenceRef, Reason } from '@mindrail/contracts';
+import type { ActorRef, EvidenceRef, Reason, ResourceRef } from '@mindrail/contracts';
 
 import type { RuntimeErrorCode } from './errors.ts';
 
@@ -70,6 +70,26 @@ export interface FailTaskCommand extends CommandEnvelope {
   evidence: EvidenceRef[];
 }
 
+export interface RequestPermissionCommand extends CommandEnvelope {
+  command: 'RequestPermission';
+  taskId: string;
+  sessionId: string;
+  leaseId: string;
+  fencingToken: number;
+  permission: string;
+  justification: string;
+  resource?: ResourceRef;
+}
+
+export interface RecordPermissionDecisionCommand extends CommandEnvelope {
+  command: 'RecordPermissionDecision';
+  requestId: string;
+  outcome: 'ALLOW' | 'DENY';
+  expectedPreviousDecisionId: string;
+  reasonCode: string;
+  reason?: string;
+}
+
 export interface RetryTaskCommand extends CommandEnvelope {
   command: 'RetryTask';
   taskId: string;
@@ -97,6 +117,8 @@ export type ProtocolCommand =
   | RecordCheckpointCommand
   | CompleteTaskCommand
   | FailTaskCommand
+  | RequestPermissionCommand
+  | RecordPermissionDecisionCommand
   | RetryTaskCommand
   | CancelTaskCommand
   | CancelGoalCommand;

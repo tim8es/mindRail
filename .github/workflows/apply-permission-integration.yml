@@ -1,0 +1,33 @@
+name: Apply Permission Integration
+
+on:
+  push:
+    branches:
+      - feature/permission-engine-v0-1
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message == 'chore: stage permission engine implementation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Apply isolated integration patch
+        run: node scripts/apply-permission-integration.mjs
+
+      - name: Remove temporary integration machinery
+        run: rm scripts/apply-permission-integration.mjs .github/workflows/apply-permission-integration.yml
+
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/runtime/in-memory-control-plane.ts scripts/apply-permission-integration.mjs .github/workflows/apply-permission-integration.yml
+          git commit -m "feat: integrate permission runtime surface"
+          git push origin HEAD:feature/permission-engine-v0-1
