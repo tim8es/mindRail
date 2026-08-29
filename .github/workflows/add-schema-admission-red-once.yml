@@ -32,6 +32,8 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
           const path = 'test/runtime/control-plane-review-regressions.test.ts';
+          const tests = Buffer.from('CiAgaXQoJ3JlamVjdHMgYSBHb2FsIHRoYXQgdmlvbGF0ZXMgY2Fub25pY2FsIHNjaGVtYSBib3VuZHMgYmVmb3JlIGluc2VydGlvbicsICgpID0+IHsKICAgIGNvbnN0IHJ1bnRpbWUgPSBjcmVhdGVSdW50aW1lKCk7CgogICAgZXhwZWN0SW52YWxpZElucHV0KCgpID0+CiAgICAgIHJ1bnRpbWUuY3JlYXRlR29hbCh7CiAgICAgICAgd29ya3NwYWNlSWQ6ICd3cy0xJywKICAgICAgICB0aXRsZTogJycsCiAgICAgICAgb2JqZWN0aXZlOiAnQ2Fub25pY2FsIHNjaGVtYSBhZG1pc3Npb24gbXVzdCBydW4gYmVmb3JlIGluc2VydGlvbi4nLAogICAgICAgIHN1Y2Nlc3NDcml0ZXJpYTogWydJbnZhbGlkIHRpdGxlIG11c3QgYmUgcmVqZWN0ZWQuJ10sCiAgICAgIH0pLAogICAgKTsKCiAgICBleHBlY3QoKCkgPT4gcnVudGltZS5nZXRHb2FsKCd3cy0xJywgJ2dvYWwtMScpKS50b1Rocm93RXJyb3IoUnVudGltZUVycm9yKTsKICB9KTsKCiAgaXQoJ3JlamVjdHMgYSBjYW5jZWxsYXRpb24gUmVhc29uIHRoYXQgdmlvbGF0ZXMgY2Fub25pY2FsIHNjaGVtYSBiZWZvcmUgbXV0YXRpb24nLCAoKSA9PiB7CiAgICBjb25zdCBydW50aW1lID0gY3JlYXRlUnVudGltZSgpOwogICAgY29uc3QgZ29hbCA9IHJ1bnRpbWUuY3JlYXRlR29hbCh7CiAgICAgIHdvcmtzcGFjZUlkOiAnd3MtMScsCiAgICAgIHRpdGxlOiAnUmVhc29uIHZhbGlkYXRpb24nLAogICAgICBvYmplY3RpdmU6ICdSZWplY3QgaW52YWxpZCBib3VuZGVkIFJlYXNvbnMgYmVmb3JlIHRhc2sgbXV0YXRpb24uJywKICAgICAgc3VjY2Vzc0NyaXRlcmlhOiBbJ1Rhc2sgcmVtYWlucyByZWFkeSBhZnRlciBpbnZhbGlkIGNhbmNlbGxhdGlvbi4nXSwKICAgIH0pOwogICAgY29uc3QgdGFzayA9IHJ1bnRpbWUuY3JlYXRlVGFzayh7CiAgICAgIHdvcmtzcGFjZUlkOiAnd3MtMScsCiAgICAgIGdvYWxJZDogZ29hbC5pZCwKICAgICAgdGl0bGU6ICdSZW1haW4gcmVhZHknLAogICAgICBvYmplY3RpdmU6ICdEbyBub3QgYWNjZXB0IGFuIGVtcHR5IFJlYXNvbiBzdW1tYXJ5LicsCiAgICAgIGFjY2VwdGFuY2VDcml0ZXJpYTogWydTdGF0dXMgcmVtYWlucyByZWFkeS4nXSwKICAgICAgcmVxdWlyZWRDYXBhYmlsaXRpZXM6IFtdLAogICAgICBkZXBlbmRlbmN5VGFza0lkczogW10sCiAgICB9KTsKCiAgICBleHBlY3RJbnZhbGlkSW5wdXQoKCkgPT4KICAgICAgcnVudGltZS5jYW5jZWxUYXNrKHsKICAgICAgICB3b3Jrc3BhY2VJZDogJ3dzLTEnLAogICAgICAgIHRhc2tJZDogdGFzay5pZCwKICAgICAgICBleHBlY3RlZFRhc2tSZXZpc2lvbjogdGFzay5yZXZpc2lvbiwKICAgICAgICByZWFzb246IHsgY29kZTogJ3VzZXIuc3RvcCcsIHN1bW1hcnk6ICcnIH0sCiAgICAgIH0pLAogICAgKTsKCiAgICBleHBlY3QocnVudGltZS5nZXRUYXNrKCd3cy0xJywgdGFzay5pZCkuc3RhdHVzKS50b0JlKCdyZWFkeScpOwogIH0pOwoKICBpdCgncmVqZWN0cyBDaGVja3BvaW50IGV2aWRlbmNlIHRoYXQgdmlvbGF0ZXMgY2Fub25pY2FsIHNjaGVtYSBiZWZvcmUgYXBwZW5kJywgKCkgPT4gewogICAgY29uc3QgcnVudGltZSA9IGNyZWF0ZVJ1bnRpbWUoKTsKICAgIGNvbnN0IGFnZW50ID0gcnVudGltZS5yZWdpc3RlckFnZW50KHsKICAgICAgd29ya3NwYWNlSWQ6ICd3cy0xJywKICAgICAgZGlzcGxheU5hbWU6ICdXb3JrZXInLAogICAgICBjYXBhYmlsaXRpZXM6IFtdLAogICAgfSk7CiAgICBjb25zdCBzZXNzaW9uID0gcnVudGltZS5zdGFydFNlc3Npb24oeyB3b3Jrc3BhY2VJZDogJ3dzLTEnLCBhZ2VudElkOiBhZ2VudC5pZCB9KTsKICAgIGNvbnN0IGdvYWwgPSBydW50aW1lLmNyZWF0ZUdvYWwoewogICAgICB3b3Jrc3BhY2VJZDogJ3dzLTEnLAogICAgICB0aXRsZTogJ0V2aWRlbmNlIHZhbGlkYXRpb24nLAogICAgICBvYmplY3RpdmU6ICdSZWplY3QgbWFsZm9ybWVkIG5lc3RlZCBldmlkZW5jZSBiZWZvcmUgY2hlY2twb2ludCBpbnNlcnRpb24uJywKICAgICAgc3VjY2Vzc0NyaXRlcmlhOiBbJ05vIGludmFsaWQgY2hlY2twb2ludCBpcyBwZXJzaXN0ZWQuJ10sCiAgICB9KTsKICAgIGNvbnN0IHRhc2sgPSBydW50aW1lLmNyZWF0ZVRhc2soewogICAgICB3b3Jrc3BhY2VJZDogJ3dzLTEnLAogICAgICBnb2FsSWQ6IGdvYWwuaWQsCiAgICAgIHRpdGxlOiAnQ2hlY2twb2ludCB0YXNrJywKICAgICAgb2JqZWN0aXZlOiAnRXhlcmNpc2UgY2hlY2twb2ludCBhZG1pc3Npb24uJywKICAgICAgYWNjZXB0YW5jZUNyaXRlcmlhOiBbJ0hpc3Rvcnkgc3RheXMgZW1wdHkgYWZ0ZXIgaW52YWxpZCBldmlkZW5jZS4nXSwKICAgICAgcmVxdWlyZWRDYXBhYmlsaXRpZXM6IFtdLAogICAgICBkZXBlbmRlbmN5VGFza0lkczogW10sCiAgICB9KTsKICAgIGNvbnN0IGNsYWltID0gcnVudGltZS5jbGFpbVRhc2soewogICAgICB3b3Jrc3BhY2VJZDogJ3dzLTEnLAogICAgICB0YXNrSWQ6IHRhc2suaWQsCiAgICAgIHNlc3Npb25JZDogc2Vzc2lvbi5pZCwKICAgICAgZXhwZWN0ZWRUYXNrUmV2aXNpb246IHRhc2sucmV2aXNpb24sCiAgICB9KTsKCiAgICBleHBlY3RJbnZhbGlkSW5wdXQoKCkgPT4KICAgICAgcnVudGltZS5yZWNvcmRDaGVja3BvaW50KHsKICAgICAgICB3b3Jrc3BhY2VJZDogJ3dzLTEnLAogICAgICAgIHRhc2tJZDogdGFzay5pZCwKICAgICAgICBzZXNzaW9uSWQ6IHNlc3Npb24uaWQsCiAgICAgICAgbGVhc2VJZDogY2xhaW0ubGVhc2UuaWQsCiAgICAgICAgZmVuY2luZ1Rva2VuOiBjbGFpbS5sZWFzZS5mZW5jaW5nVG9rZW4sCiAgICAgICAga2luZDogJ3Byb2dyZXNzJywKICAgICAgICBzdW1tYXJ5OiAnTWFsZm9ybWVkIGV2aWRlbmNlIG11c3QgYmUgcmVqZWN0ZWQuJywKICAgICAgICBldmlkZW5jZTogW3sgdXJpOiAnZXZpZGVuY2U6Ly9vaycsIHNoYTI1NjogJ25vdC1hLXNoYTI1NicgfV0sCiAgICAgICAgcHJvZ3Jlc3NQZXJjZW50OiAxMCwKICAgICAgfSksCiAgICApOwoKICAgIGV4cGVjdChydW50aW1lLmxpc3RUYXNrQ2hlY2twb2ludHMoJ3dzLTEnLCB0YXNrLmlkKSkudG9IYXZlTGVuZ3RoKDApOwogIH0pOwo=', 'base64').toString('utf8');
+          const helper = Buffer.from('CmZ1bmN0aW9uIGV4cGVjdEludmFsaWRJbnB1dChhY3Rpb246ICgpID0+IHVua25vd24pOiB2b2lkIHsKICB0cnkgewogICAgYWN0aW9uKCk7CiAgfSBjYXRjaCAoZXJyb3IpIHsKICAgIGV4cGVjdChlcnJvcikudG9CZUluc3RhbmNlT2YoUnVudGltZUVycm9yKTsKICAgIGV4cGVjdCgoZXJyb3IgYXMgUnVudGltZUVycm9yKS5jb2RlKS50b0JlKCdJTlZBTElEX0lOUFVUJyk7CiAgICByZXR1cm47CiAgfQogIHRocm93IG5ldyBFcnJvcignRXhwZWN0ZWQgSU5WQUxJRF9JTlBVVC4nKTsKfQo=', 'base64').toString('utf8');
           let source = fs.readFileSync(path, 'utf8');
           source = source.replace(
             "import { InMemoryControlPlane } from '../../src/runtime/in-memory-control-plane.ts';",
@@ -40,113 +42,7 @@ jobs:
           const marker = '\n});\n';
           const index = source.lastIndexOf(marker);
           if (index === -1) throw new Error('Test suite closing marker not found.');
-          const tests = `
-
-  it('rejects a Goal that violates canonical schema bounds before insertion', () => {
-    const runtime = createRuntime();
-
-    expectInvalidInput(() =>
-      runtime.createGoal({
-        workspaceId: 'ws-1',
-        title: '',
-        objective: 'Canonical schema admission must run before insertion.',
-        successCriteria: ['Invalid title must be rejected.'],
-      }),
-    );
-
-    expect(() => runtime.getGoal('ws-1', 'goal-1')).toThrowError(RuntimeError);
-  });
-
-  it('rejects a cancellation Reason that violates canonical schema before mutation', () => {
-    const runtime = createRuntime();
-    const goal = runtime.createGoal({
-      workspaceId: 'ws-1',
-      title: 'Reason validation',
-      objective: 'Reject invalid bounded Reasons before task mutation.',
-      successCriteria: ['Task remains ready after invalid cancellation.'],
-    });
-    const task = runtime.createTask({
-      workspaceId: 'ws-1',
-      goalId: goal.id,
-      title: 'Remain ready',
-      objective: 'Do not accept an empty Reason summary.',
-      acceptanceCriteria: ['Status remains ready.'],
-      requiredCapabilities: [],
-      dependencyTaskIds: [],
-    });
-
-    expectInvalidInput(() =>
-      runtime.cancelTask({
-        workspaceId: 'ws-1',
-        taskId: task.id,
-        expectedTaskRevision: task.revision,
-        reason: { code: 'user.stop', summary: '' },
-      }),
-    );
-
-    expect(runtime.getTask('ws-1', task.id).status).toBe('ready');
-  });
-
-  it('rejects Checkpoint evidence that violates canonical schema before append', () => {
-    const runtime = createRuntime();
-    const agent = runtime.registerAgent({
-      workspaceId: 'ws-1',
-      displayName: 'Worker',
-      capabilities: [],
-    });
-    const session = runtime.startSession({ workspaceId: 'ws-1', agentId: agent.id });
-    const goal = runtime.createGoal({
-      workspaceId: 'ws-1',
-      title: 'Evidence validation',
-      objective: 'Reject malformed nested evidence before checkpoint insertion.',
-      successCriteria: ['No invalid checkpoint is persisted.'],
-    });
-    const task = runtime.createTask({
-      workspaceId: 'ws-1',
-      goalId: goal.id,
-      title: 'Checkpoint task',
-      objective: 'Exercise checkpoint admission.',
-      acceptanceCriteria: ['History stays empty after invalid evidence.'],
-      requiredCapabilities: [],
-      dependencyTaskIds: [],
-    });
-    const claim = runtime.claimTask({
-      workspaceId: 'ws-1',
-      taskId: task.id,
-      sessionId: session.id,
-      expectedTaskRevision: task.revision,
-    });
-
-    expectInvalidInput(() =>
-      runtime.recordCheckpoint({
-        workspaceId: 'ws-1',
-        taskId: task.id,
-        sessionId: session.id,
-        leaseId: claim.lease.id,
-        fencingToken: claim.lease.fencingToken,
-        kind: 'progress',
-        summary: 'Malformed evidence must be rejected.',
-        evidence: [{ uri: 'evidence://ok', sha256: 'not-a-sha256' }],
-        progressPercent: 10,
-      }),
-    );
-
-    expect(runtime.listTaskCheckpoints('ws-1', task.id)).toHaveLength(0);
-  });
-`;
-          source = source.slice(0, index) + tests + source.slice(index);
-          source += `
-function expectInvalidInput(action: () => unknown): void {
-  try {
-    action();
-  } catch (error) {
-    expect(error).toBeInstanceOf(RuntimeError);
-    expect((error as RuntimeError).code).toBe('INVALID_INPUT');
-    return;
-  }
-  throw new Error('Expected INVALID_INPUT.');
-}
-`;
+          source = source.slice(0, index) + tests + source.slice(index) + helper;
           fs.writeFileSync(path, source);
           NODE
       - name: Observe focused RED
