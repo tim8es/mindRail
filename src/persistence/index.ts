@@ -1,0 +1,18 @@
+export {
+  PersistenceError,
+  type ClaimTaskCommitInput,
+  type ClaimTaskCommitValue,
+  type CommandReceiptInput,
+  type CompleteTaskCommitInput,
+  type CompleteTaskCommitValue,
+  type DurableRuntimePersistence,
+  type MutationCommitResult,
+  type PendingHumanPermission,
+  type PersistenceDomainTarget,
+  type PersistenceDomainValidationResult,
+  type PersistenceDomainValidator,
+  type PersistenceErrorCode,
+  type StoredCommandReceipt,
+  type WorkspaceMutationCoordinator,
+  type WorkspaceStateSnapshot,
+} from './ports.ts';
