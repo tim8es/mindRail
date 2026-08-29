@@ -116,14 +116,26 @@ async function query<T>(
 
 async function seedClaimedTask(transport: HttpTransport, prefix: string) {
   const systemActor = { type: 'system', id: 'system-1' } as const;
-  const registered = await command<Agent>(transport, 'RegisterAgent', `${prefix}-register`, systemActor, {
-    displayName: 'Durable liveness worker',
-    capabilities: ['repo.write'],
-  });
+  const registered = await command<Agent>(
+    transport,
+    'RegisterAgent',
+    `${prefix}-register`,
+    systemActor,
+    {
+      displayName: 'Durable liveness worker',
+      capabilities: ['repo.write'],
+    },
+  );
   const agentActor = { type: 'agent', id: registered.result.id } as const;
-  const session = await command<Session>(transport, 'StartSession', `${prefix}-session`, systemActor, {
-    agentId: registered.result.id,
-  });
+  const session = await command<Session>(
+    transport,
+    'StartSession',
+    `${prefix}-session`,
+    systemActor,
+    {
+      agentId: registered.result.id,
+    },
+  );
   const goal = await command<Goal>(transport, 'CreateGoal', `${prefix}-goal`, systemActor, {
     title: 'Durable liveness goal',
     objective: 'Exercise restart-safe Session and Lease liveness.',
@@ -180,9 +192,11 @@ describe('durable Session/Lease liveness E2E', () => {
       revision: seeded.session.revision + 1,
       lastSeenAt: clock.now.toISOString(),
     });
-    expect(await query<Lease>(app.transport, 'GetLease', seeded.agentActor, { leaseId: originalLease.id })).toEqual(
-      originalLease,
-    );
+    expect(
+      await query<Lease>(app.transport, 'GetLease', seeded.agentActor, {
+        leaseId: originalLease.id,
+      }),
+    ).toEqual(originalLease);
     app.database.close();
 
     app = await openApplication(path, 'heartbeat-replay', clock);
@@ -208,14 +222,20 @@ describe('durable Session/Lease liveness E2E', () => {
 
     clock.now = new Date('2026-08-30T11:00:20.000Z');
     app = await openApplication(path, 'renew-after', clock, 60_000);
-    const renewed = await command<Lease>(app.transport, 'RenewLease', 'renew-command', seeded.agentActor, {
-      taskId: seeded.task.id,
-      sessionId: seeded.session.id,
-      leaseId: seeded.claim.lease.id,
-      fencingToken: seeded.claim.lease.fencingToken,
-      expectedLeaseRevision: seeded.claim.lease.revision,
-      correlationId: 'renew-first',
-    });
+    const renewed = await command<Lease>(
+      app.transport,
+      'RenewLease',
+      'renew-command',
+      seeded.agentActor,
+      {
+        taskId: seeded.task.id,
+        sessionId: seeded.session.id,
+        leaseId: seeded.claim.lease.id,
+        fencingToken: seeded.claim.lease.fencingToken,
+        expectedLeaseRevision: seeded.claim.lease.revision,
+        correlationId: 'renew-first',
+      },
+    );
     expect(renewed.result).toMatchObject({
       id: seeded.claim.lease.id,
       revision: seeded.claim.lease.revision + 1,
@@ -257,13 +277,19 @@ describe('durable Session/Lease liveness E2E', () => {
     app.database.close();
 
     app = await openApplication(path, 'release-after', clock);
-    const released = await command<Lease>(app.transport, 'ReleaseLease', 'release-command', seeded.agentActor, {
-      taskId: seeded.task.id,
-      sessionId: seeded.session.id,
-      leaseId: seeded.claim.lease.id,
-      fencingToken: seeded.claim.lease.fencingToken,
-      expectedLeaseRevision: seeded.claim.lease.revision,
-    });
+    const released = await command<Lease>(
+      app.transport,
+      'ReleaseLease',
+      'release-command',
+      seeded.agentActor,
+      {
+        taskId: seeded.task.id,
+        sessionId: seeded.session.id,
+        leaseId: seeded.claim.lease.id,
+        fencingToken: seeded.claim.lease.fencingToken,
+        expectedLeaseRevision: seeded.claim.lease.revision,
+      },
+    );
     expect(released.result).toMatchObject({
       id: seeded.claim.lease.id,
       status: 'released',
@@ -293,17 +319,29 @@ describe('durable Session/Lease liveness E2E', () => {
     let app = await openApplication(path, 'end-before', clock);
     await app.persistence.bootstrapWorkspace(workspace());
     const seeded = await seedClaimedTask(app.transport, 'end');
-    const recoverySession = await command<Session>(app.transport, 'StartSession', 'end-recovery-session', seeded.systemActor, {
-      agentId: seeded.agent.id,
-    });
+    const recoverySession = await command<Session>(
+      app.transport,
+      'StartSession',
+      'end-recovery-session',
+      seeded.systemActor,
+      {
+        agentId: seeded.agent.id,
+      },
+    );
     app.database.close();
 
     clock.now = new Date('2026-08-30T13:00:10.000Z');
     app = await openApplication(path, 'end-after', clock);
-    const ended = await command<EndSessionResult>(app.transport, 'EndSession', 'end-command', seeded.agentActor, {
-      sessionId: seeded.session.id,
-      expectedSessionRevision: seeded.session.revision,
-    });
+    const ended = await command<EndSessionResult>(
+      app.transport,
+      'EndSession',
+      'end-command',
+      seeded.agentActor,
+      {
+        sessionId: seeded.session.id,
+        expectedSessionRevision: seeded.session.revision,
+      },
+    );
     expect(ended.result.session).toMatchObject({
       id: seeded.session.id,
       status: 'ended',
@@ -317,15 +355,23 @@ describe('durable Session/Lease liveness E2E', () => {
       revision: seeded.claim.lease.revision + 1,
       fencingToken: seeded.claim.lease.fencingToken,
     });
-    expect(await query<Lease>(app.transport, 'GetLease', seeded.systemActor, { leaseId: seeded.claim.lease.id })).toEqual(
-      ended.result.leases[0],
-    );
+    expect(
+      await query<Lease>(app.transport, 'GetLease', seeded.systemActor, {
+        leaseId: seeded.claim.lease.id,
+      }),
+    ).toEqual(ended.result.leases[0]);
 
-    const recovered = await command<ClaimResult>(app.transport, 'ClaimTask', 'end-recovery-claim', seeded.agentActor, {
-      taskId: seeded.task.id,
-      sessionId: recoverySession.result.id,
-      expectedTaskRevision: seeded.claim.task.revision,
-    });
+    const recovered = await command<ClaimResult>(
+      app.transport,
+      'ClaimTask',
+      'end-recovery-claim',
+      seeded.agentActor,
+      {
+        taskId: seeded.task.id,
+        sessionId: recoverySession.result.id,
+        expectedTaskRevision: seeded.claim.task.revision,
+      },
+    );
     expect(recovered.result.lease.fencingToken).toBeGreaterThan(seeded.claim.lease.fencingToken);
     app.database.close();
   });
