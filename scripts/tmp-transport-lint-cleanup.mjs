@@ -29,6 +29,12 @@ const newUriCheck =
   "if (typeof value.uri !== 'string' || value.uri.length > 2048 || /\\s/u.test(value.uri) || hasControlCharacters(value.uri)) return false;";
 if (!text.includes(oldUriCheck)) throw new Error('missing URI control-character check');
 text = text.replace(oldUriCheck, newUriCheck);
+const oldSizeCheck =
+  "if (value.sizeBytes !== undefined && (!Number.isInteger(value.sizeBytes) || value.sizeBytes < 0)) return false;";
+const newSizeCheck =
+  "if (value.sizeBytes !== undefined && (typeof value.sizeBytes !== 'number' || !Number.isInteger(value.sizeBytes) || value.sizeBytes < 0)) return false;";
+if (!text.includes(oldSizeCheck)) throw new Error('missing EvidenceRef sizeBytes check');
+text = text.replace(oldSizeCheck, newSizeCheck);
 const helperAnchor = 'function hasOnlyKeys(record: Record<string, unknown>, allowed: readonly string[]): boolean {';
 if (!text.includes(helperAnchor)) throw new Error('missing helper insertion point');
 text = text.replace(
