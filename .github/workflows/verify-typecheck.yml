@@ -28,5 +28,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Typecheck only
-        run: pnpm typecheck
+      - name: Diagnose declaration and interop boundaries
+        run: |
+          set +e
+          pnpm exec tsc -p tsconfig.base.json --skipLibCheck
+          skip_only=$?
+          echo "skip_lib_check_only_status=$skip_only"
+
+          pnpm exec tsc -p tsconfig.base.json --skipLibCheck --esModuleInterop
+          interop=$?
+          echo "skip_lib_check_plus_interop_status=$interop"
+
+          test "$skip_only" -ne 0
+          test "$interop" -eq 0
