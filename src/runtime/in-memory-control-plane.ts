@@ -50,10 +50,25 @@ import {
   type RetryTaskCommand,
 } from './protocol.ts';
 import { isProtocolEntityId, validateProtocolCommand } from './protocol-validation.ts';
+import {
+  prepareRuntimeStateSnapshot,
+  type PreparedRuntimeState,
+  type RuntimeStateSnapshot,
+} from './state-rehydration.ts';
 
 export interface InMemoryControlPlaneOptions {
   workspaceId: string;
   workspaceName: string;
+  now: () => Date;
+  idFactory: (kind: string) => string;
+  leaseDurationMs: number;
+  sessionTimeoutMs: number;
+  validateCanonicalDomainRecord: CanonicalDomainValidator;
+  permissionPolicy?: PermissionPolicy;
+}
+
+export interface InMemoryControlPlaneRehydrationOptions {
+  snapshot: RuntimeStateSnapshot;
   now: () => Date;
   idFactory: (kind: string) => string;
   leaseDurationMs: number;
@@ -245,6 +260,29 @@ export class InMemoryControlPlane {
   private readonly fencingCounterByTask = new Map<string, number>();
   private readonly commandReceipts = new Map<string, CommandReceipt>();
 
+  static rehydrate(options: InMemoryControlPlaneRehydrationOptions): InMemoryControlPlane {
+    const prepared = prepareRuntimeStateSnapshot({
+      snapshot: options.snapshot,
+      validateCanonicalDomainRecord: options.validateCanonicalDomainRecord,
+      nowMs: options.now().getTime(),
+      sessionTimeoutMs: options.sessionTimeoutMs,
+    });
+    const runtime = new InMemoryControlPlane({
+      workspaceId: prepared.snapshot.workspace.id,
+      workspaceName: prepared.snapshot.workspace.name,
+      now: options.now,
+      idFactory: options.idFactory,
+      leaseDurationMs: options.leaseDurationMs,
+      sessionTimeoutMs: options.sessionTimeoutMs,
+      validateCanonicalDomainRecord: options.validateCanonicalDomainRecord,
+      ...(options.permissionPolicy === undefined
+        ? {}
+        : { permissionPolicy: options.permissionPolicy }),
+    });
+    runtime.restorePreparedState(prepared);
+    return runtime;
+  }
+
   constructor(options: InMemoryControlPlaneOptions) {
     if (options.leaseDurationMs <= 0) {
       throw new RuntimeError('INVALID_INPUT', 'leaseDurationMs must be positive.');
@@ -278,6 +316,30 @@ export class InMemoryControlPlane {
     };
     this.assertCanonical('Workspace', workspace);
     this.workspace = workspace;
+  }
+
+  private restorePreparedState(prepared: PreparedRuntimeState): void {
+    const snapshot = prepared.snapshot;
+    Object.assign(this.workspace, clone(snapshot.workspace));
+
+    for (const agent of snapshot.agents) this.agents.set(agent.id, clone(agent));
+    for (const session of snapshot.sessions) this.sessions.set(session.id, clone(session));
+    for (const goal of snapshot.goals) this.goals.set(goal.id, clone(goal));
+    for (const task of snapshot.tasks) {
+      this.tasks.set(task.id, clone(task));
+      this.checkpointsByTask.set(task.id, []);
+    }
+    for (const lease of snapshot.leases) this.leases.set(lease.id, clone(lease));
+    for (const checkpoint of snapshot.checkpoints) {
+      this.checkpointsByTask.get(checkpoint.taskId)!.push(clone(checkpoint));
+    }
+    for (const [taskId, counter] of Object.entries(snapshot.fencingCounters)) {
+      this.fencingCounterByTask.set(taskId, counter);
+    }
+    for (const [taskId, leaseId] of prepared.effectiveLeaseByTask) {
+      this.effectiveLeaseByTask.set(taskId, leaseId);
+    }
+    this.permissionService.restoreState(snapshot.permissionRequests, snapshot.permissionDecisions);
   }
 
   execute(command: RegisterAgentCommand): ProtocolResponse<Agent>;

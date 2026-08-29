@@ -40,16 +40,36 @@ export function prepareRuntimeStateSnapshot(input: {
   const snapshot = clone(input.snapshot);
   assertCanonical(input.validateCanonicalDomainRecord, 'Workspace', snapshot.workspace);
 
-  const agents = indexRecords(snapshot.agents, 'Agent', snapshot.workspace.id, input.validateCanonicalDomainRecord);
+  const agents = indexRecords(
+    snapshot.agents,
+    'Agent',
+    snapshot.workspace.id,
+    input.validateCanonicalDomainRecord,
+  );
   const sessions = indexRecords(
     snapshot.sessions,
     'Session',
     snapshot.workspace.id,
     input.validateCanonicalDomainRecord,
   );
-  const goals = indexRecords(snapshot.goals, 'Goal', snapshot.workspace.id, input.validateCanonicalDomainRecord);
-  const tasks = indexRecords(snapshot.tasks, 'Task', snapshot.workspace.id, input.validateCanonicalDomainRecord);
-  const leases = indexRecords(snapshot.leases, 'Lease', snapshot.workspace.id, input.validateCanonicalDomainRecord);
+  const goals = indexRecords(
+    snapshot.goals,
+    'Goal',
+    snapshot.workspace.id,
+    input.validateCanonicalDomainRecord,
+  );
+  const tasks = indexRecords(
+    snapshot.tasks,
+    'Task',
+    snapshot.workspace.id,
+    input.validateCanonicalDomainRecord,
+  );
+  const leases = indexRecords(
+    snapshot.leases,
+    'Lease',
+    snapshot.workspace.id,
+    input.validateCanonicalDomainRecord,
+  );
   indexRecords(
     snapshot.checkpoints,
     'Checkpoint',
@@ -129,14 +149,16 @@ export function prepareRuntimeStateSnapshot(input: {
   }
   for (const decision of snapshot.permissionDecisions) {
     if (!requests.has(decision.requestId)) {
-      conflict(`PermissionDecision ${decision.id} references missing request ${decision.requestId}.`);
+      conflict(
+        `PermissionDecision ${decision.id} references missing request ${decision.requestId}.`,
+      );
     }
   }
 
   const counterKeys = new Set(Object.keys(snapshot.fencingCounters));
   for (const task of snapshot.tasks) {
     const counter = snapshot.fencingCounters[task.id];
-    if (!Number.isSafeInteger(counter) || counter === undefined || counter < 0) {
+    if (counter === undefined || !Number.isSafeInteger(counter) || counter < 0) {
       conflict(`Task ${task.id} has no valid durable fencing counter.`);
     }
     if (counter < (maximumFenceByTask.get(task.id) ?? 0)) {
@@ -195,7 +217,9 @@ function assertCanonical(
   const details = validation.errors?.slice(0, 3).join('; ');
   throw new RuntimeError(
     'INVALID_INPUT',
-    details ? `${target} violates canonical domain schema. ${details}` : `${target} violates canonical domain schema.`,
+    details
+      ? `${target} violates canonical domain schema. ${details}`
+      : `${target} violates canonical domain schema.`,
   );
 }
 
