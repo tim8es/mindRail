@@ -162,6 +162,40 @@ export interface TaskOutcomeCommitValue {
   checkpoint: Checkpoint;
 }
 
+export interface CancelTaskCommitInput {
+  workspaceId: string;
+  task: Task;
+  lease?: Lease;
+  expectedTaskRevision: number;
+  now: string;
+  sessionCutoff: string;
+  receipt?: CommandReceiptInput;
+  auditEvent?: AuditEvent;
+}
+
+export interface CancelTaskCommitValue {
+  task: Task;
+  lease?: Lease;
+}
+
+export interface CancelGoalCommitInput {
+  workspaceId: string;
+  goal: Goal;
+  tasks: Task[];
+  leases: Lease[];
+  expectedGoalRevision: number;
+  now: string;
+  sessionCutoff: string;
+  receipt?: CommandReceiptInput;
+  auditEvent?: AuditEvent;
+}
+
+export interface CancelGoalCommitValue {
+  goal: Goal;
+  tasks: Task[];
+  leases: Lease[];
+}
+
 export interface DurableRuntimePersistence {
   bootstrapWorkspace(workspace: Workspace): Promise<void>;
   createAgent(input: {
@@ -234,6 +268,16 @@ export interface DurableRuntimePersistence {
     receipt?: CommandReceiptInput;
     auditEvent?: AuditEvent;
   }): Promise<MutationCommitResult<Task>>;
+  retryTask(input: {
+    task: Task;
+    expectedRevision: number;
+    now: string;
+    sessionCutoff: string;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Task>>;
+  cancelTask(input: CancelTaskCommitInput): Promise<MutationCommitResult<CancelTaskCommitValue>>;
+  cancelGoal(input: CancelGoalCommitInput): Promise<MutationCommitResult<CancelGoalCommitValue>>;
   appendAuditEvent(input: { auditEvent: AuditEvent }): Promise<void>;
   appendPermissionRequestWithInitialDecision(input: {
     request: PermissionRequest;
