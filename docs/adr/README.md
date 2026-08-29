@@ -47,3 +47,4 @@ Each ADR includes:
 - [ADR-0001](ADR-0001-system-boundaries.md): **Accepted** — core system boundaries and vendor neutrality.
 - [ADR-0002](ADR-0002-licensing-model.md): **Accepted** — BUSL-1.1 source-available licensing direction.
 - [ADR-0003](ADR-0003-domain-contracts-and-schema-authority.md): **Accepted** — domain contracts and JSON Schema authority.
+- [ADR-0004](ADR-0004-runtime-state-machine-and-concurrency.md): **Accepted** — runtime lifecycle, Goal/Task ordering, leases, fencing, and concurrency.
