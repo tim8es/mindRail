@@ -1,0 +1,180 @@
+name: Integrate transports once
+
+on:
+  push:
+    branches:
+      - integration/transports-v0-1
+    paths:
+      - .github/workflows/transport-integrate-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: integration/transports-v0-1
+          fetch-depth: 0
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - name: Install pnpm
+        run: npm install --global "$(node -p "require('./package.json').packageManager")"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Materialize transport candidate without package script mutation
+        run: |
+          git fetch origin feature/transports-v0-1
+          git checkout origin/feature/transports-v0-1 -- src/application src/transports test/transports
+      - name: Reconcile one semantic protocol and harden admission
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace(path, old, new, label):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise RuntimeError(f'{path}: missing anchor {label}')
+              p.write_text(text.replace(old, new, 1))
+
+          p = Path('src/application/protocol.ts')
+          text = p.read_text()
+          text = text.replace("import type { ActorRef, EvidenceRef, Reason, ResourceRef } from '@mindrail/contracts';", "import type { ActorRef } from '@mindrail/contracts';", 1)
+          pattern = re.compile(r"export interface HeartbeatSessionCommand extends CommandEnvelope \{.*?export type ParallelCommand =.*?;\n\nexport type ApplicationCommand = ProtocolCommand \| ParallelCommand;", re.S)
+          replacement = "export type ParallelCommand = RegisterAgentCommand | StartSessionCommand;\n\nexport type ApplicationCommand = ProtocolCommand | ParallelCommand;"
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise RuntimeError('src/application/protocol.ts: failed to collapse duplicate runtime command types')
+          p.write_text(text)
+
+          replace(
+              'src/application/validation.ts',
+              "      'expectedTaskRevision',\n      'reason',\n      'summary',\n      'evidence',",
+              "      'expectedTaskRevision',\n      'reason',\n      'evidence',",
+              'canonical BlockTask shape',
+          )
+          p = Path('src/application/validation.ts')
+          text = p.read_text()
+          pattern = re.compile(r"function validateParallelCommand\(.*?\nfunction entityFieldsForQuery", re.S)
+          replacement = '''function validateParallelCommand(\n  commandName: 'RegisterAgent' | 'StartSession',\n  record: Record<string, unknown>,\n): string | undefined {\n  switch (commandName) {\n    case 'RegisterAgent':\n      if (!isBoundedString(record.displayName, 1, 200)) {\n        return 'displayName must be a bounded string';\n      }\n      if (!isStringArray(record.capabilities)) return 'capabilities must be an array of strings';\n      return undefined;\n    case 'StartSession':\n      return requireEntityFields(record, ['agentId']);\n  }\n}\n\ntype RuntimeProtocolCommandName = Exclude<\n  ApplicationCommandName,\n  'RegisterAgent' | 'StartSession'\n>;\n\nfunction isRuntimeProtocolCommand(\n  name: ApplicationCommandName,\n): name is RuntimeProtocolCommandName {\n  return name !== 'RegisterAgent' && name !== 'StartSession';\n}\n\nfunction entityFieldsForQuery'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise RuntimeError('src/application/validation.ts: failed to replace duplicate runtime validators')
+          p.write_text(text)
+
+          p = Path('src/application/in-memory-dispatcher.ts')
+          text = p.read_text()
+          pattern = re.compile(r"export const IN_MEMORY_UNSUPPORTED_COMMANDS = \[.*?\] as const satisfies readonly ApplicationCommandName\[\];", re.S)
+          replacement = "export const IN_MEMORY_UNSUPPORTED_COMMANDS = [\n  'RegisterAgent',\n  'StartSession',\n] as const satisfies readonly ApplicationCommandName[];"
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise RuntimeError('in-memory-dispatcher: failed to reconcile unsupported commands')
+          p.write_text(text)
+
+          replace(
+              'src/runtime/protocol-validation.ts',
+              "      requireNamespacedName(command, 'permission', errors);\n      requireString(command, 'justification', errors);",
+              "      requireNamespacedName(command, 'permission', errors);\n      requireBoundedString(command, 'justification', 1, 2000, errors);",
+              'PermissionRequest justification bound',
+          )
+          replace(
+              'src/runtime/protocol-validation.ts',
+              "      optionalString(command, 'reason', errors);",
+              "      optionalBoundedString(command, 'reason', 1, 1000, errors);",
+              'permission decision reason bound',
+          )
+          replace(
+              'src/runtime/protocol-validation.ts',
+              "function optionalString(record: Record<string, unknown>, key: string, errors: string[]): void {\n  if (record[key] !== undefined && typeof record[key] !== 'string') {\n    errors.push(`${key} must be a string when present`);\n  }\n}\n",
+              "function optionalString(record: Record<string, unknown>, key: string, errors: string[]): void {\n  if (record[key] !== undefined && typeof record[key] !== 'string') {\n    errors.push(`${key} must be a string when present`);\n  }\n}\n\nfunction requireBoundedString(\n  record: Record<string, unknown>,\n  key: string,\n  minLength: number,\n  maxLength: number,\n  errors: string[],\n): void {\n  const value = record[key];\n  if (typeof value !== 'string' || value.length < minLength || value.length > maxLength) {\n    errors.push(`${key} must be a string from ${minLength} to ${maxLength} characters`);\n  }\n}\n\nfunction optionalBoundedString(\n  record: Record<string, unknown>,\n  key: string,\n  minLength: number,\n  maxLength: number,\n  errors: string[],\n): void {\n  if (record[key] !== undefined) requireBoundedString(record, key, minLength, maxLength, errors);\n}\n",
+              'bounded string helpers',
+          )
+          p = Path('src/runtime/protocol-validation.ts')
+          text = p.read_text()
+          old = """function requireReason(record: Record<string, unknown>, key: string, errors: string[]): void {\n  const value = record[key];\n  if (!isRecord(value) || typeof value.code !== 'string' || typeof value.summary !== 'string') {\n    errors.push(`${key} must be a Reason-shaped object`);\n  }\n}\n\nfunction requireEvidenceArray(\n  record: Record<string, unknown>,\n  key: string,\n  errors: string[],\n): void {\n  const value = record[key];\n  if (!Array.isArray(value) || value.some((entry) => !isRecord(entry))) {\n    errors.push(`${key} must be an array of EvidenceRef-shaped objects`);\n  }\n}\n"""
+          new = """function requireReason(record: Record<string, unknown>, key: string, errors: string[]): void {\n  const value = record[key];\n  if (\n    !isRecord(value) ||\n    !hasOnlyKeys(value, ['code', 'summary']) ||\n    typeof value.code !== 'string' ||\n    value.code.length > 128 ||\n    !NAMESPACED_NAME_PATTERN.test(value.code) ||\n    typeof value.summary !== 'string' ||\n    value.summary.length < 1 ||\n    value.summary.length > 1000\n  ) {\n    errors.push(`${key} must be a bounded canonical Reason`);\n  }\n}\n\nfunction requireEvidenceArray(\n  record: Record<string, unknown>,\n  key: string,\n  errors: string[],\n): void {\n  const value = record[key];\n  if (!Array.isArray(value) || value.length > 32 || value.some((entry) => !isEvidenceRef(entry))) {\n    errors.push(`${key} must be an array of at most 32 canonical EvidenceRef objects`);\n  }\n}\n\nfunction isEvidenceRef(value: unknown): boolean {\n  if (!isRecord(value) || !hasOnlyKeys(value, ['uri', 'mediaType', 'sha256', 'sizeBytes'])) {\n    return false;\n  }\n  if (typeof value.uri !== 'string' || value.uri.length > 2048 || /[\\s\\u0000-\\u001f]/u.test(value.uri)) {\n    return false;\n  }\n  if (/%(?![0-9A-Fa-f]{2})/u.test(value.uri)) return false;\n  if (\n    value.mediaType !== undefined &&\n    (typeof value.mediaType !== 'string' || value.mediaType.length < 1 || value.mediaType.length > 255)\n  ) {\n    return false;\n  }\n  if (value.sha256 !== undefined && (typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(value.sha256))) {\n    return false;\n  }\n  if (value.sizeBytes !== undefined && (!Number.isInteger(value.sizeBytes) || (value.sizeBytes as number) < 0)) {\n    return false;\n  }\n  return true;\n}\n\nfunction hasOnlyKeys(record: Record<string, unknown>, allowed: readonly string[]): boolean {\n  const allowedSet = new Set(allowed);\n  return Object.keys(record).every((key) => allowedSet.has(key));\n}\n"""
+          if old not in text:
+              raise RuntimeError('protocol-validation: missing reason/evidence anchor')
+          text = text.replace(old, new, 1)
+          old_resource = """  if (\n    typeof value.type !== 'string' ||\n    value.type.length > 128 ||\n    !NAMESPACED_NAME_PATTERN.test(value.type) ||\n    !isProtocolEntityId(value.id)\n  ) {"""
+          new_resource = """  if (\n    !hasOnlyKeys(value, ['type', 'id']) ||\n    typeof value.type !== 'string' ||\n    value.type.length > 128 ||\n    !NAMESPACED_NAME_PATTERN.test(value.type) ||\n    !isProtocolEntityId(value.id)\n  ) {"""
+          if old_resource not in text:
+              raise RuntimeError('protocol-validation: missing resource anchor')
+          p.write_text(text.replace(old_resource, new_resource, 1))
+
+          p = Path('test/transports/mcp-adapter.test.ts')
+          text = p.read_text()
+          old = """    expect(names).not.toEqual(\n      expect.arrayContaining([\n        'execute_action',\n        'update_entity',\n        'patch_object',\n        'shell',\n        'filesystem',\n        'browser',\n      ]),\n    );"""
+          new = """    for (const forbidden of [\n      'execute_action',\n      'update_entity',\n      'patch_object',\n      'shell',\n      'filesystem',\n      'browser',\n    ]) {\n      expect(names).not.toContain(forbidden);\n    }"""
+          if old not in text:
+              raise RuntimeError('mcp test: missing forbidden-tools assertion')
+          text = text.replace(old, new, 1)
+          text = text.replace("      commandId: '',\n      unexpectedAuthority: 'allow',", "      unexpectedAuthority: 'allow',", 1)
+          p.write_text(text)
+          PY
+      - name: Persist review regressions
+        run: |
+          cat > test/runtime/protocol-admission-bounds-review.test.ts <<'EOF'
+          import { describe, expect, it } from 'vitest';
+          import { validateProtocolCommand } from '../../src/runtime/protocol-validation.ts';
+
+          const base = {
+            protocolVersion: '0.1', commandId: 'cmd-1', workspaceId: 'ws-1', actor: { type: 'agent', id: 'agent-1' },
+            taskId: 'task-1', sessionId: 'session-1', leaseId: 'lease-1', fencingToken: 1,
+          };
+
+          describe('protocol structural bounds', () => {
+            it('rejects malformed and oversized EvidenceRef arrays', () => {
+              expect(validateProtocolCommand({ ...base, command: 'BlockTask', expectedTaskRevision: 1, reason: { code: 'task.blocked', summary: 'blocked' }, evidence: [{ uri: 123 }] }).valid).toBe(false);
+              expect(validateProtocolCommand({ ...base, command: 'BlockTask', expectedTaskRevision: 1, reason: { code: 'task.blocked', summary: 'blocked' }, evidence: Array.from({ length: 33 }, (_, i) => ({ uri: `e-${i}` })) }).valid).toBe(false);
+            });
+            it('rejects PermissionRequest justification beyond the canonical bound', () => {
+              expect(validateProtocolCommand({ ...base, command: 'RequestPermission', permission: 'repository.write', justification: 'x'.repeat(2001) }).valid).toBe(false);
+            });
+          });
+          EOF
+          cat > test/transports/review-regressions.test.ts <<'EOF'
+          import { describe, expect, it } from 'vitest';
+          import { IN_MEMORY_UNSUPPORTED_COMMANDS } from '../../src/application/in-memory-dispatcher.ts';
+          import { parseApplicationCommand } from '../../src/application/validation.ts';
+
+          const envelope = { protocolVersion: '0.1', workspaceId: 'ws-1', actor: { type: 'agent', id: 'agent-1' } } as const;
+
+          describe('transport integration regressions', () => {
+            it('accepts canonical BlockTask without a duplicate summary field', () => {
+              expect(parseApplicationCommand('BlockTask', { ...envelope, commandId: 'cmd-block', taskId: 'task-1', sessionId: 'session-1', leaseId: 'lease-1', fencingToken: 1, expectedTaskRevision: 2, reason: { code: 'task.blocked', summary: 'Need input.' }, evidence: [] }).ok).toBe(true);
+            });
+            it('delegates all implemented runtime mutations instead of reporting them unsupported', () => {
+              expect(IN_MEMORY_UNSUPPORTED_COMMANDS).toEqual(['RegisterAgent', 'StartSession']);
+            });
+            it('rejects noncanonical permission input before dispatch', () => {
+              const base = { ...envelope, commandId: 'cmd-permission', taskId: 'task-1', sessionId: 'session-1', leaseId: 'lease-1', fencingToken: 1, justification: 'Need repository write.' };
+              expect(parseApplicationCommand('RequestPermission', { ...base, permission: 'NOT VALID' }).ok).toBe(false);
+              expect(parseApplicationCommand('RequestPermission', { ...base, commandId: 'cmd-long', permission: 'repository.write', justification: 'x'.repeat(2001) }).ok).toBe(false);
+            });
+          });
+          EOF
+      - name: Format
+        run: pnpm exec prettier --write src/application src/transports src/runtime/protocol-validation.ts test/transports test/runtime/protocol-admission-bounds-review.test.ts
+      - name: Focused transport and protocol tests
+        run: pnpm vitest run test/transports test/runtime/protocol-admission-bounds-review.test.ts test/runtime/control-plane-runtime-surface.test.ts test/runtime/permission-engine.test.ts
+      - name: Full quality
+        run: pnpm check
+      - name: Coverage
+        run: pnpm test:coverage
+      - name: Commit verified transports
+        run: |
+          git rm -f .github/workflows/transport-integrate-once.yml .github/workflows/transport-review-red.yml .github/workflows/protocol-admission-red.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/application src/transports src/runtime/protocol-validation.ts test/transports test/runtime/protocol-admission-bounds-review.test.ts
+          git commit -m "feat: integrate HTTP and MCP protocol adapters"
+          git push origin HEAD:integration/transports-v0-1
