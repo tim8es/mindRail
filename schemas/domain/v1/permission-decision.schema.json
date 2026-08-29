@@ -28,6 +28,7 @@
       "then": {
         "required": ["policyRef"],
         "properties": {
+          "policyRef": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/PolicyRef" },
           "decidedBy": {
             "allOf": [
               { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/ActorRef" },
