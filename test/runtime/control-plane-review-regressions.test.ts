@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { RuntimeError } from '../../src/runtime/errors.ts';
 import { InMemoryControlPlane } from '../../src/runtime/in-memory-control-plane.ts';
 
 function createRuntime() {
@@ -226,4 +227,107 @@ describe('pre-merge runtime review regressions', () => {
     expect('error' in retry && retry.error.code).toBe('ACTOR_NOT_AUTHORIZED');
     expect(runtime.getTask('ws-1', task.id).status).toBe('failed');
   });
+  it('rejects a Goal that violates canonical schema bounds before insertion', () => {
+    const runtime = createRuntime();
+
+    expectInvalidInput(() =>
+      runtime.createGoal({
+        workspaceId: 'ws-1',
+        title: '',
+        objective: 'Canonical schema admission must run before insertion.',
+        successCriteria: ['Invalid title must be rejected.'],
+      }),
+    );
+
+    expect(() => runtime.getGoal('ws-1', 'goal-1')).toThrowError(RuntimeError);
+  });
+
+  it('rejects a cancellation Reason that violates canonical schema before mutation', () => {
+    const runtime = createRuntime();
+    const goal = runtime.createGoal({
+      workspaceId: 'ws-1',
+      title: 'Reason validation',
+      objective: 'Reject invalid bounded Reasons before task mutation.',
+      successCriteria: ['Task remains ready after invalid cancellation.'],
+    });
+    const task = runtime.createTask({
+      workspaceId: 'ws-1',
+      goalId: goal.id,
+      title: 'Remain ready',
+      objective: 'Do not accept an empty Reason summary.',
+      acceptanceCriteria: ['Status remains ready.'],
+      requiredCapabilities: [],
+      dependencyTaskIds: [],
+    });
+
+    expectInvalidInput(() =>
+      runtime.cancelTask({
+        workspaceId: 'ws-1',
+        taskId: task.id,
+        expectedTaskRevision: task.revision,
+        reason: { code: 'user.stop', summary: '' },
+      }),
+    );
+
+    expect(runtime.getTask('ws-1', task.id).status).toBe('ready');
+  });
+
+  it('rejects Checkpoint evidence that violates canonical schema before append', () => {
+    const runtime = createRuntime();
+    const agent = runtime.registerAgent({
+      workspaceId: 'ws-1',
+      displayName: 'Worker',
+      capabilities: [],
+    });
+    const session = runtime.startSession({ workspaceId: 'ws-1', agentId: agent.id });
+    const goal = runtime.createGoal({
+      workspaceId: 'ws-1',
+      title: 'Evidence validation',
+      objective: 'Reject malformed nested evidence before checkpoint insertion.',
+      successCriteria: ['No invalid checkpoint is persisted.'],
+    });
+    const task = runtime.createTask({
+      workspaceId: 'ws-1',
+      goalId: goal.id,
+      title: 'Checkpoint task',
+      objective: 'Exercise checkpoint admission.',
+      acceptanceCriteria: ['History stays empty after invalid evidence.'],
+      requiredCapabilities: [],
+      dependencyTaskIds: [],
+    });
+    const claim = runtime.claimTask({
+      workspaceId: 'ws-1',
+      taskId: task.id,
+      sessionId: session.id,
+      expectedTaskRevision: task.revision,
+    });
+
+    expectInvalidInput(() =>
+      runtime.recordCheckpoint({
+        workspaceId: 'ws-1',
+        taskId: task.id,
+        sessionId: session.id,
+        leaseId: claim.lease.id,
+        fencingToken: claim.lease.fencingToken,
+        kind: 'progress',
+        summary: 'Malformed evidence must be rejected.',
+        evidence: [{ uri: 'evidence://ok', sha256: 'not-a-sha256' }],
+        progressPercent: 10,
+      }),
+    );
+
+    expect(runtime.listTaskCheckpoints('ws-1', task.id)).toHaveLength(0);
+  });
+
 });
+
+function expectInvalidInput(action: () => unknown): void {
+  try {
+    action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(RuntimeError);
+    expect((error as RuntimeError).code).toBe('INVALID_INPUT');
+    return;
+  }
+  throw new Error('Expected INVALID_INPUT.');
+}
