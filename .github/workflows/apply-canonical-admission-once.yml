@@ -1,0 +1,186 @@
+name: Apply canonical runtime admission once
+
+on:
+  push:
+    branches:
+      - feature/local-runtime-vertical-slice
+
+permissions:
+  contents: write
+
+jobs:
+  green:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feature/local-runtime-vertical-slice
+      - name: Install Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - name: Install repository pnpm
+        run: npm install --global "$(node -p "require('./package.json').packageManager")"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Wire canonical admission into runtime
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const runtimePath = 'src/runtime/in-memory-control-plane.ts';
+          let source = fs.readFileSync(runtimePath, 'utf8');
+
+          function replaceOnce(needle, replacement, label) {
+            if (!source.includes(needle)) {
+              throw new Error(`Expected ${label} pattern was not found.`);
+            }
+            source = source.replace(needle, replacement);
+          }
+
+          function insertAfterInMethod(methodAnchor, needle, insertion, label) {
+            const methodIndex = source.indexOf(methodAnchor);
+            if (methodIndex === -1) throw new Error(`Method ${label} was not found.`);
+            const needleIndex = source.indexOf(needle, methodIndex);
+            if (needleIndex === -1) throw new Error(`Insertion point for ${label} was not found.`);
+            const at = needleIndex + needle.length;
+            source = source.slice(0, at) + insertion + source.slice(at);
+          }
+
+          replaceOnce(
+            "import { RuntimeError } from './errors.ts';\n",
+            "import type { CanonicalDomainTarget, CanonicalDomainValidator } from './domain-validation.ts';\nimport { RuntimeError } from './errors.ts';\n",
+            'domain validation import',
+          );
+
+          replaceOnce(
+            '  leaseDurationMs: number;\n}',
+            '  leaseDurationMs: number;\n  validateCanonicalDomainRecord: CanonicalDomainValidator;\n}',
+            'runtime options validator',
+          );
+
+          replaceOnce(
+            '  private readonly leaseDurationMs: number;\n\n  private readonly agents',
+            '  private readonly leaseDurationMs: number;\n  private readonly validateCanonicalDomainRecord: CanonicalDomainValidator;\n\n  private readonly agents',
+            'runtime validator field',
+          );
+
+          replaceOnce(
+            `    this.now = options.now;\n    this.idFactory = options.idFactory;\n    this.leaseDurationMs = options.leaseDurationMs;\n    const timestamp = this.timestamp();\n    this.workspace = {\n      id: options.workspaceId,\n      revision: 1,\n      createdAt: timestamp,\n      updatedAt: timestamp,\n      name: options.workspaceName,\n      status: 'active',\n    };`,
+            `    this.now = options.now;\n    this.idFactory = options.idFactory;\n    this.leaseDurationMs = options.leaseDurationMs;\n    this.validateCanonicalDomainRecord = options.validateCanonicalDomainRecord;\n    const timestamp = this.timestamp();\n    const workspace: Workspace = {\n      id: options.workspaceId,\n      revision: 1,\n      createdAt: timestamp,\n      updatedAt: timestamp,\n      name: options.workspaceName,\n      status: 'active',\n    };\n    this.assertCanonical('Workspace', workspace);\n    this.workspace = workspace;`,
+            'workspace admission',
+          );
+
+          for (const [needle, target, label] of [
+            ['    this.agents.set(agent.id, agent);', 'Agent', 'Agent'],
+            ['    this.sessions.set(session.id, session);', 'Session', 'Session'],
+            ['    this.goals.set(goal.id, goal);', 'Goal', 'Goal'],
+            ['    this.tasks.set(task.id, task);', 'Task', 'Task'],
+          ]) {
+            replaceOnce(
+              needle,
+              `    this.assertCanonical('${target}', ${target.toLowerCase()});\n${needle}`,
+              `${label} admission`,
+            );
+          }
+
+          replaceOnce(
+            `    const nextFence = (this.fencingCounterByTask.get(task.id) ?? 0) + 1;\n    this.fencingCounterByTask.set(task.id, nextFence);\n\n    const lease: Lease = {`,
+            `    const nextFence = (this.fencingCounterByTask.get(task.id) ?? 0) + 1;\n\n    const lease: Lease = {`,
+            'pre-validation fence mutation',
+          );
+          replaceOnce(
+            `    };\n    this.leases.set(lease.id, lease);\n    this.effectiveLeaseByTask.set(task.id, lease.id);`,
+            `    };\n    this.assertCanonical('Lease', lease);\n    this.fencingCounterByTask.set(task.id, nextFence);\n    this.leases.set(lease.id, lease);\n    this.effectiveLeaseByTask.set(task.id, lease.id);`,
+            'Lease admission',
+          );
+
+          replaceOnce(
+            `    const checkpoints = this.checkpointsByTask.get(input.taskId);`,
+            `    this.assertCanonical('Checkpoint', checkpoint);\n    const checkpoints = this.checkpointsByTask.get(input.taskId);`,
+            'Checkpoint admission',
+          );
+
+          insertAfterInMethod(
+            '  failTask(input: FailTaskInput): FailTaskResult {',
+            '    this.assertRevision(task.revision, input.expectedTaskRevision, `Task ${task.id}`);\n',
+            "    this.assertCanonical('Reason', input.reason);\n",
+            'failTask Reason admission',
+          );
+
+          insertAfterInMethod(
+            '  cancelTask(input: CancelTaskInput): CancelTaskResult {',
+            "    if (!isCancellableTaskStatus(task.status)) {\n      throw new RuntimeError('INVALID_STATE_TRANSITION', `Task ${task.id} is terminal.`);\n    }\n",
+            "    this.assertCanonical('Reason', input.reason);\n",
+            'cancelTask Reason admission',
+          );
+
+          insertAfterInMethod(
+            '  cancelGoal(input: CancelGoalInput): CancelGoalResult {',
+            "    if (goal.status !== 'active') {\n      throw new RuntimeError('INVALID_STATE_TRANSITION', `Goal ${goal.id} is terminal.`);\n    }\n",
+            "    this.assertCanonical('Reason', input.reason);\n",
+            'cancelGoal Reason admission',
+          );
+
+          replaceOnce(
+            '  private assertControllerActor(\n',
+            `  private assertCanonical(target: CanonicalDomainTarget, value: unknown): void {\n    const validation = this.validateCanonicalDomainRecord(target, value);\n    if (validation.valid) {\n      return;\n    }\n    const details = validation.errors?.slice(0, 3).join('; ');\n    throw new RuntimeError(\n      'INVALID_INPUT',\n      \`${target} violates canonical domain schema.\${details === undefined || details.length === 0 ? '' : \` \${details}\`}\`,\n    );\n  }\n\n  private assertControllerActor(\n`,
+            'canonical assertion helper',
+          );
+
+          fs.writeFileSync(runtimePath, source);
+          NODE
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const files = [
+            'test/runtime/control-plane.test.ts',
+            'test/runtime/control-plane-state.test.ts',
+            'test/runtime/control-plane-invariants.test.ts',
+            'test/runtime/control-plane-review-regressions.test.ts',
+          ];
+
+          for (const path of files) {
+            let source = fs.readFileSync(path, 'utf8');
+            if (!source.includes("./canonical-domain-validator.ts")) {
+              const runtimeImport = "import { InMemoryControlPlane } from '../../src/runtime/in-memory-control-plane.ts';\n";
+              if (!source.includes(runtimeImport)) {
+                throw new Error(`Runtime import not found in ${path}.`);
+              }
+              source = source.replace(
+                runtimeImport,
+                `${runtimeImport}import { canonicalDomainValidator } from './canonical-domain-validator.ts';\n`,
+              );
+            }
+            source = source.replace(
+              /^(\s*)leaseDurationMs: ([^,\n]+),$/gm,
+              (match, indent, value) =>
+                `${indent}leaseDurationMs: ${value},\n${indent}validateCanonicalDomainRecord: canonicalDomainValidator,`,
+            );
+            if (!source.includes('validateCanonicalDomainRecord: canonicalDomainValidator')) {
+              throw new Error(`Validator option was not wired in ${path}.`);
+            }
+            fs.writeFileSync(path, source);
+          }
+          NODE
+
+      - name: Format changed files
+        run: pnpm prettier --write src/runtime/domain-validation.ts src/runtime/in-memory-control-plane.ts test/runtime/canonical-domain-validator.ts test/runtime/control-plane.test.ts test/runtime/control-plane-state.test.ts test/runtime/control-plane-invariants.test.ts test/runtime/control-plane-review-regressions.test.ts
+      - name: Verify focused canonical admission GREEN
+        run: pnpm vitest run test/runtime/control-plane-review-regressions.test.ts -t "canonical schema"
+      - name: Verify full repository quality
+        run: pnpm check
+      - name: Verify coverage execution
+        run: pnpm test:coverage
+      - name: Commit GREEN and remove one-time workflow
+        shell: bash
+        run: |
+          rm .github/workflows/apply-canonical-admission-once.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/runtime/domain-validation.ts src/runtime/in-memory-control-plane.ts test/runtime/canonical-domain-validator.ts test/runtime/control-plane.test.ts test/runtime/control-plane-state.test.ts test/runtime/control-plane-invariants.test.ts test/runtime/control-plane-review-regressions.test.ts .github/workflows/apply-canonical-admission-once.yml
+          git commit -m "fix: enforce canonical domain admission"
+          git push origin HEAD:feature/local-runtime-vertical-slice
