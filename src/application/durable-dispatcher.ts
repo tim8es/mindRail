@@ -23,6 +23,7 @@ import {
   InMemoryControlPlane,
   type ClaimTaskResult,
   type CompleteTaskResult,
+  type EndSessionResult,
 } from '../runtime/in-memory-control-plane.ts';
 import type { RequestPermissionResult } from '../runtime/permission-service.ts';
 import {
@@ -242,9 +243,13 @@ function isFirstDurableLoopCommand(command: ProtocolCommand): boolean {
   return (
     command.command === 'RegisterAgent' ||
     command.command === 'StartSession' ||
+    command.command === 'HeartbeatSession' ||
+    command.command === 'EndSession' ||
     command.command === 'CreateGoal' ||
     command.command === 'CreateTask' ||
     command.command === 'ClaimTask' ||
+    command.command === 'RenewLease' ||
+    command.command === 'ReleaseLease' ||
     command.command === 'RecordCheckpoint' ||
     command.command === 'RequestPermission' ||
     command.command === 'RecordPermissionDecision' ||
@@ -280,6 +285,40 @@ async function commitDurableSuccess(
         command,
         await options.persistence.createSession({
           session: result,
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
+        }),
+      );
+    }
+    case 'HeartbeatSession': {
+      const result = semanticResponse.result as Session;
+      return resolveMutationResult(
+        command,
+        await options.persistence.heartbeatSession({
+          session: result,
+          expectedRevision: command.expectedSessionRevision,
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
+        }),
+      );
+    }
+    case 'EndSession': {
+      const result = semanticResponse.result as EndSessionResult;
+      return resolveMutationResult(
+        command,
+        await options.persistence.endSession({
+          session: result.session,
+          leases: result.leases,
+          expectedSessionRevision: command.expectedSessionRevision,
+          now: result.session.updatedAt,
           receipt: receiptFor(
             command,
             fingerprint,
@@ -337,6 +376,44 @@ async function commitDurableSuccess(
         deferredReceipt,
       });
       return resolveMutationResult(command, committed);
+    }
+    case 'RenewLease': {
+      const result = semanticResponse.result as Lease;
+      const now = result.updatedAt;
+      return resolveMutationResult(
+        command,
+        await options.persistence.renewLease({
+          lease: result,
+          expectedRevision: command.expectedLeaseRevision,
+          now,
+          sessionCutoff: new Date(Date.parse(now) - options.sessionTimeoutMs).toISOString(),
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
+        }),
+      );
+    }
+    case 'ReleaseLease': {
+      const result = semanticResponse.result as Lease;
+      const now = result.updatedAt;
+      return resolveMutationResult(
+        command,
+        await options.persistence.releaseLease({
+          lease: result,
+          expectedRevision: command.expectedLeaseRevision,
+          now,
+          sessionCutoff: new Date(Date.parse(now) - options.sessionTimeoutMs).toISOString(),
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
+        }),
+      );
     }
     case 'RecordCheckpoint': {
       const result = semanticResponse.result as Checkpoint;

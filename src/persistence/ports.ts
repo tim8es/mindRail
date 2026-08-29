@@ -157,6 +157,36 @@ export interface DurableRuntimePersistence {
     receipt?: CommandReceiptInput;
     auditEvent?: AuditEvent;
   }): Promise<MutationCommitResult<Session>>;
+  heartbeatSession(input: {
+    session: Session;
+    expectedRevision: number;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Session>>;
+  endSession(input: {
+    session: Session;
+    leases: Lease[];
+    expectedSessionRevision: number;
+    now: string;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<{ session: Session; leases: Lease[] }>>;
+  renewLease(input: {
+    lease: Lease;
+    expectedRevision: number;
+    now: string;
+    sessionCutoff: string;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Lease>>;
+  releaseLease(input: {
+    lease: Lease;
+    expectedRevision: number;
+    now: string;
+    sessionCutoff: string;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Lease>>;
   createGoal(input: {
     goal: Goal;
     receipt?: CommandReceiptInput;

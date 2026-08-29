@@ -55,6 +55,7 @@ The project is in `0.x` development and does not yet have a public product relea
 - Persistence list reads used by the durable application surface now support explicit bounded offsets while legacy unpaginated persistence reads remain available where existing internal tests depend on them.
 - Durable `ListClaimableTasks` is advisory only; it exposes capability-compatible `ready` Tasks and `running` recovery Tasks whose prior Lease/Session authority is no longer effective at authoritative server time, while Task execution authority is still acquired and revalidated atomically by `ClaimTask`.
 - Admitted terminal semantic failures in the supported durable command loop now persist immutable `outcomeKind: error` command receipts and replay after restart instead of re-executing the command.
+- Durable Session/Lease liveness composition now supports `HeartbeatSession`, `EndSession`, `RenewLease`, and `ReleaseLease` with atomic mutation receipts, restart-safe replay, stable renewal fencing, and recoverable released/revoked execution authority.
 
 ### Verification
 

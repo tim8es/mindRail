@@ -8,6 +8,7 @@ import type {
 
 export class SqliteD1Database implements D1DatabaseLike {
   private readonly database: DatabaseSync;
+  private failNextBatchAfterStatementCount: number | undefined;
 
   constructor(path: string) {
     this.database = new DatabaseSync(path);
@@ -21,18 +22,34 @@ export class SqliteD1Database implements D1DatabaseLike {
   async batch(statements: D1PreparedStatementLike[]): Promise<D1ResultLike[]> {
     this.database.exec('BEGIN IMMEDIATE;');
     try {
-      const results = statements.map((statement) => {
+      const results: D1ResultLike[] = [];
+      for (const statement of statements) {
         if (!(statement instanceof SqliteD1PreparedStatement)) {
           throw new TypeError('SqliteD1Database can only batch its own prepared statements.');
         }
-        return statement.runSync();
-      });
+        if (
+          this.failNextBatchAfterStatementCount !== undefined &&
+          results.length === this.failNextBatchAfterStatementCount
+        ) {
+          throw new Error('Injected D1-like batch failure.');
+        }
+        results.push(statement.runSync());
+      }
+      this.failNextBatchAfterStatementCount = undefined;
       this.database.exec('COMMIT;');
       return results;
     } catch (error) {
+      this.failNextBatchAfterStatementCount = undefined;
       this.database.exec('ROLLBACK;');
       throw error;
     }
+  }
+
+  failNextBatchAfterStatements(statementCount: number): void {
+    if (!Number.isSafeInteger(statementCount) || statementCount < 0) {
+      throw new TypeError('statementCount must be a non-negative safe integer.');
+    }
+    this.failNextBatchAfterStatementCount = statementCount;
   }
 
   async exec(sql: string): Promise<void> {
