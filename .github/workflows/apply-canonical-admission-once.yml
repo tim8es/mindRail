@@ -125,9 +125,25 @@ jobs:
             'cancelGoal Reason admission',
           );
 
+          const canonicalHelper = [
+            '  private assertCanonical(target: CanonicalDomainTarget, value: unknown): void {',
+            '    const validation = this.validateCanonicalDomainRecord(target, value);',
+            '    if (validation.valid) {',
+            '      return;',
+            '    }',
+            "    const details = validation.errors?.slice(0, 3).join('; ');",
+            '    const message =',
+            '      details === undefined || details.length === 0',
+            '        ? `${target} violates canonical domain schema.`',
+            '        : `${target} violates canonical domain schema. ${details}`;',
+            "    throw new RuntimeError('INVALID_INPUT', message);",
+            '  }',
+            '',
+            '  private assertControllerActor(',
+          ].join('\n');
           replaceOnce(
             '  private assertControllerActor(\n',
-            `  private assertCanonical(target: CanonicalDomainTarget, value: unknown): void {\n    const validation = this.validateCanonicalDomainRecord(target, value);\n    if (validation.valid) {\n      return;\n    }\n    const details = validation.errors?.slice(0, 3).join('; ');\n    throw new RuntimeError(\n      'INVALID_INPUT',\n      \`${target} violates canonical domain schema.\${details === undefined || details.length === 0 ? '' : \` \${details}\`}\`,\n    );\n  }\n\n  private assertControllerActor(\n`,
+            canonicalHelper + '\n',
             'canonical assertion helper',
           );
 
