@@ -206,8 +206,9 @@ async function dispatchDurableQuery(
         }
         const session = await options.persistence.getSession(query.workspaceId, query.sessionId);
         if (!session) return queryFailure(query, 'NOT_FOUND', 'Durable Session was not found.');
+        const now = options.now();
         const staleAt = Date.parse(session.lastSeenAt) + options.sessionTimeoutMs;
-        if (session.status !== 'active' || options.now().getTime() >= staleAt) {
+        if (session.status !== 'active' || now.getTime() >= staleAt) {
           return queryFailure(
             query,
             'SESSION_NOT_ACTIVE',
@@ -216,7 +217,6 @@ async function dispatchDurableQuery(
         }
         const window = listWindow(query.limit, query.cursor);
         if (!window) return invalidListWindow(query);
-        const now = options.now();
         const rows = await options.persistence.listClaimableTasks(
           query.workspaceId,
           query.sessionId,

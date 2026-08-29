@@ -53,7 +53,8 @@ The project is in `0.x` development and does not yet have a public product relea
 - Application transport validation now reuses the canonical runtime protocol validator for all commands instead of maintaining a separate bootstrap validator/command authority.
 - Agent bootstrap pre-admission mirrors canonical Agent bounds: display name length, at most 64 unique namespaced capabilities, and no wildcard/fuzzy matching.
 - Persistence list reads used by the durable application surface now support explicit bounded offsets while legacy unpaginated persistence reads remain available where existing internal tests depend on them.
-- Durable `ListClaimableTasks` is advisory only; Task execution authority is still acquired and revalidated atomically by `ClaimTask`.
+- Durable `ListClaimableTasks` is advisory only; it exposes capability-compatible `ready` Tasks and `running` recovery Tasks whose prior Lease/Session authority is no longer effective at authoritative server time, while Task execution authority is still acquired and revalidated atomically by `ClaimTask`.
+- Admitted terminal semantic failures in the supported durable command loop now persist immutable `outcomeKind: error` command receipts and replay after restart instead of re-executing the command.
 
 ### Verification
 
@@ -70,6 +71,7 @@ The project is in `0.x` development and does not yet have a public product relea
 - Durable dispatcher RED verification failed all four new dispatcher regressions for the expected missing composition, while existing tests remained green. Task 3 implementation run `33271753166` passed focused dispatcher/persistence verification, full `pnpm check`, and coverage.
 - Durable query semantic RED run `33274570145` failed the four new query regressions because the durable dispatcher still returned `UNSUPPORTED_OPERATION`, while 115 existing tests passed. Task 4 integration run `33274741762` then passed focused durable-query/persistence verification, full `pnpm check`, and coverage.
 - Permanent Quality run `33274903333` passed the restart-safe durable HTTP E2E tree with **29/29 test files and 123/123 tests**, plus `pnpm test:coverage`. Overall coverage reported 85.3% statements, 73.3% branches, 96.15% functions, and 86.95% lines.
+- Final correctness-review RED run `33275182068` failed exactly the two new terminal-error-receipt and recovery-discovery regressions while the previous 123 tests passed. Review-fix run `33275312677` then passed focused regressions, full `pnpm check`, and coverage with **30/30 test files and 125/125 tests**; overall coverage was 85.43% statements, 73.5% branches, 96.18% functions, and 87.07% lines.
 - Frozen installation resolves `@mindrail/contracts 0.0.0 <- packages/contracts`, confirming the root runtime uses the workspace contract package.
 - No new third-party runtime dependency was introduced for schema admission, protocol admission, bootstrap, transport, permission, persistence composition, rehydration, or durable query semantics.
 
