@@ -56,6 +56,15 @@ export interface RenewLeaseCommand extends CommandEnvelope {
   expectedLeaseRevision: number;
 }
 
+export interface ReleaseLeaseCommand extends CommandEnvelope {
+  command: 'ReleaseLease';
+  taskId: string;
+  sessionId: string;
+  leaseId: string;
+  fencingToken: number;
+  expectedLeaseRevision: number;
+}
+
 export interface RecordCheckpointCommand extends CommandEnvelope {
   command: 'RecordCheckpoint';
   taskId: string;
@@ -135,6 +144,7 @@ export type ProtocolCommand =
   | CreateTaskCommand
   | ClaimTaskCommand
   | RenewLeaseCommand
+  | ReleaseLeaseCommand
   | RecordCheckpointCommand
   | CompleteTaskCommand
   | FailTaskCommand
