@@ -189,4 +189,89 @@ describe('in-memory control plane', () => {
       expect(['LEASE_NOT_ACTIVE', 'STALE_FENCING_TOKEN']).toContain((error as RuntimeError).code);
     }
   });
+
+  it('makes protocol commands idempotent across retries and tracing changes', () => {
+    let sequence = 0;
+    const now = new Date('2026-08-29T12:00:00.000Z');
+    const runtime = new InMemoryControlPlane({
+      workspaceId: 'ws-1',
+      workspaceName: 'Dogfood',
+      now: () => new Date(now),
+      idFactory: (kind) => `${kind}-${++sequence}`,
+      leaseDurationMs: 60_000,
+    });
+
+    const command = {
+      protocolVersion: '0.1' as const,
+      command: 'CreateGoal' as const,
+      commandId: 'cmd-1',
+      workspaceId: 'ws-1',
+      actor: { type: 'human' as const, id: 'human-1' },
+      correlationId: 'corr-1',
+      causationId: 'cause-1',
+      title: 'Idempotent goal',
+      objective: 'Create exactly one Goal despite retries.',
+      successCriteria: ['Retry returns the original Goal snapshot.'],
+    };
+
+    const first = runtime.execute(command);
+    if ('error' in first) {
+      throw new Error(`Unexpected protocol failure: ${first.error.code}`);
+    }
+    expect(first.replayed).toBe(false);
+    expect(first.result.status).toBe('active');
+    const originalGoalId = first.result.id;
+
+    const agent = runtime.registerAgent({
+      workspaceId: 'ws-1',
+      displayName: 'Completer',
+      capabilities: ['code.execute'],
+    });
+    const session = runtime.startSession({ workspaceId: 'ws-1', agentId: agent.id });
+    const task = runtime.createTask({
+      workspaceId: 'ws-1',
+      goalId: originalGoalId,
+      title: 'Mutate later state',
+      objective: 'Move the Goal after its original protocol result was stored.',
+      acceptanceCriteria: ['Goal becomes succeeded.'],
+      requiredCapabilities: ['code.execute'],
+      dependencyTaskIds: [],
+    });
+    const claim = runtime.claimTask({
+      workspaceId: 'ws-1',
+      taskId: task.id,
+      sessionId: session.id,
+      expectedTaskRevision: task.revision,
+    });
+    runtime.completeTask({
+      workspaceId: 'ws-1',
+      taskId: task.id,
+      sessionId: session.id,
+      leaseId: claim.lease.id,
+      fencingToken: claim.lease.fencingToken,
+      expectedTaskRevision: claim.task.revision,
+      summary: 'Done.',
+      evidence: [],
+    });
+    expect(runtime.getGoal('ws-1', originalGoalId).status).toBe('succeeded');
+
+    const replay = runtime.execute({
+      ...command,
+      correlationId: 'corr-2',
+      causationId: 'cause-2',
+    });
+    if ('error' in replay) {
+      throw new Error(`Unexpected replay failure: ${replay.error.code}`);
+    }
+    expect(replay.replayed).toBe(true);
+    expect(replay.result.id).toBe(originalGoalId);
+    expect(replay.result.status).toBe('active');
+    expect(replay.result.revision).toBe(1);
+
+    const conflict = runtime.execute({
+      ...command,
+      title: 'Different semantic intent',
+    });
+    expect('error' in conflict && conflict.error.code).toBe('IDEMPOTENCY_CONFLICT');
+  });
 });
