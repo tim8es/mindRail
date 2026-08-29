@@ -10,6 +10,18 @@ import type {
 } from '@mindrail/contracts';
 
 import { RuntimeError } from './errors.ts';
+import {
+  semanticFingerprint,
+  type ClaimTaskCommand,
+  type CompleteTaskCommand,
+  type CreateGoalCommand,
+  type CreateTaskCommand,
+  type ProtocolCommand,
+  type ProtocolFailure,
+  type ProtocolResponse,
+  type ProtocolSuccess,
+  type RecordCheckpointCommand,
+} from './protocol.ts';
 
 export interface InMemoryControlPlaneOptions {
   workspaceId: string;
@@ -97,6 +109,11 @@ export interface CompleteTaskResult {
   checkpoint: Checkpoint;
 }
 
+interface CommandReceipt {
+  fingerprint: string;
+  response: ProtocolResponse;
+}
+
 export class InMemoryControlPlane {
   private readonly workspace: Workspace;
   private readonly now: () => Date;
@@ -111,6 +128,7 @@ export class InMemoryControlPlane {
   private readonly effectiveLeaseByTask = new Map<string, string>();
   private readonly checkpointsByTask = new Map<string, Checkpoint[]>();
   private readonly fencingCounterByTask = new Map<string, number>();
+  private readonly commandReceipts = new Map<string, CommandReceipt>();
 
   constructor(options: InMemoryControlPlaneOptions) {
     if (options.leaseDurationMs <= 0) {
@@ -129,6 +147,48 @@ export class InMemoryControlPlane {
       name: options.workspaceName,
       status: 'active',
     };
+  }
+
+  execute(command: CreateGoalCommand): ProtocolResponse<Goal>;
+  execute(command: CreateTaskCommand): ProtocolResponse<Task>;
+  execute(command: ClaimTaskCommand): ProtocolResponse<ClaimTaskResult>;
+  execute(command: RecordCheckpointCommand): ProtocolResponse<Checkpoint>;
+  execute(command: CompleteTaskCommand): ProtocolResponse<CompleteTaskResult>;
+  execute(command: ProtocolCommand): ProtocolResponse {
+    this.assertWorkspace(command.workspaceId);
+    const receiptKey = `${command.workspaceId}\u0000${command.commandId}`;
+    const fingerprint = semanticFingerprint(command);
+    const existing = this.commandReceipts.get(receiptKey);
+
+    if (existing) {
+      if (existing.fingerprint !== fingerprint) {
+        return this.protocolFailure(
+          command,
+          'IDEMPOTENCY_CONFLICT',
+          `Command id ${command.commandId} was already used for different semantic intent.`,
+          false,
+        );
+      }
+      const replay = clone(existing.response);
+      replay.replayed = true;
+      return replay;
+    }
+
+    let response: ProtocolResponse;
+    try {
+      response = this.protocolSuccess(command, this.dispatchCommand(command), false);
+    } catch (error) {
+      if (!(error instanceof RuntimeError)) {
+        throw error;
+      }
+      response = this.protocolFailure(command, error.code, error.message, false);
+    }
+
+    this.commandReceipts.set(receiptKey, {
+      fingerprint,
+      response: clone(response),
+    });
+    return clone(response);
   }
 
   getWorkspace(workspaceId: string): Workspace {
@@ -373,6 +433,93 @@ export class InMemoryControlPlane {
   listTaskCheckpoints(workspaceId: string, taskId: string): Checkpoint[] {
     this.requireTask(workspaceId, taskId);
     return clone(this.checkpointsByTask.get(taskId) ?? []);
+  }
+
+  private dispatchCommand(command: ProtocolCommand): unknown {
+    switch (command.command) {
+      case 'CreateGoal':
+        return this.createGoal({
+          workspaceId: command.workspaceId,
+          title: command.title,
+          objective: command.objective,
+          successCriteria: command.successCriteria,
+        });
+      case 'CreateTask':
+        return this.createTask({
+          workspaceId: command.workspaceId,
+          goalId: command.goalId,
+          title: command.title,
+          objective: command.objective,
+          acceptanceCriteria: command.acceptanceCriteria,
+          requiredCapabilities: command.requiredCapabilities,
+          dependencyTaskIds: command.dependencyTaskIds,
+        });
+      case 'ClaimTask':
+        return this.claimTask({
+          workspaceId: command.workspaceId,
+          taskId: command.taskId,
+          sessionId: command.sessionId,
+          expectedTaskRevision: command.expectedTaskRevision,
+        });
+      case 'RecordCheckpoint':
+        return this.recordCheckpoint({
+          workspaceId: command.workspaceId,
+          taskId: command.taskId,
+          sessionId: command.sessionId,
+          leaseId: command.leaseId,
+          fencingToken: command.fencingToken,
+          kind: command.kind,
+          summary: command.summary,
+          evidence: command.evidence,
+          ...(command.progressPercent === undefined
+            ? {}
+            : { progressPercent: command.progressPercent }),
+        });
+      case 'CompleteTask':
+        return this.completeTask({
+          workspaceId: command.workspaceId,
+          taskId: command.taskId,
+          sessionId: command.sessionId,
+          leaseId: command.leaseId,
+          fencingToken: command.fencingToken,
+          expectedTaskRevision: command.expectedTaskRevision,
+          summary: command.summary,
+          evidence: command.evidence,
+        });
+    }
+  }
+
+  private protocolSuccess(
+    command: ProtocolCommand,
+    result: unknown,
+    replayed: boolean,
+  ): ProtocolSuccess {
+    return {
+      protocolVersion: '0.1',
+      commandId: command.commandId,
+      ...(command.correlationId === undefined ? {} : { correlationId: command.correlationId }),
+      replayed,
+      result: clone(result),
+    };
+  }
+
+  private protocolFailure(
+    command: ProtocolCommand,
+    code: RuntimeError['code'],
+    message: string,
+    replayed: boolean,
+  ): ProtocolFailure {
+    return {
+      protocolVersion: '0.1',
+      commandId: command.commandId,
+      ...(command.correlationId === undefined ? {} : { correlationId: command.correlationId }),
+      replayed,
+      error: {
+        code,
+        message,
+        retryable: false,
+      },
+    };
   }
 
   private requireExecutorAuthority(input: {
