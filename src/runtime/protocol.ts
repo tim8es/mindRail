@@ -11,6 +11,18 @@ interface CommandEnvelope {
   causationId?: string;
 }
 
+export interface HeartbeatSessionCommand extends CommandEnvelope {
+  command: 'HeartbeatSession';
+  sessionId: string;
+  expectedSessionRevision: number;
+}
+
+export interface EndSessionCommand extends CommandEnvelope {
+  command: 'EndSession';
+  sessionId: string;
+  expectedSessionRevision: number;
+}
+
 export interface CreateGoalCommand extends CommandEnvelope {
   command: 'CreateGoal';
   title: string;
@@ -33,6 +45,24 @@ export interface ClaimTaskCommand extends CommandEnvelope {
   taskId: string;
   sessionId: string;
   expectedTaskRevision: number;
+}
+
+export interface RenewLeaseCommand extends CommandEnvelope {
+  command: 'RenewLease';
+  taskId: string;
+  sessionId: string;
+  leaseId: string;
+  fencingToken: number;
+  expectedLeaseRevision: number;
+}
+
+export interface ReleaseLeaseCommand extends CommandEnvelope {
+  command: 'ReleaseLease';
+  taskId: string;
+  sessionId: string;
+  leaseId: string;
+  fencingToken: number;
+  expectedLeaseRevision: number;
 }
 
 export interface RecordCheckpointCommand extends CommandEnvelope {
@@ -70,6 +100,23 @@ export interface FailTaskCommand extends CommandEnvelope {
   evidence: EvidenceRef[];
 }
 
+export interface BlockTaskCommand extends CommandEnvelope {
+  command: 'BlockTask';
+  taskId: string;
+  sessionId: string;
+  leaseId: string;
+  fencingToken: number;
+  expectedTaskRevision: number;
+  reason: Reason;
+  evidence: EvidenceRef[];
+}
+
+export interface ResumeTaskCommand extends CommandEnvelope {
+  command: 'ResumeTask';
+  taskId: string;
+  expectedTaskRevision: number;
+}
+
 export interface RetryTaskCommand extends CommandEnvelope {
   command: 'RetryTask';
   taskId: string;
@@ -91,12 +138,18 @@ export interface CancelGoalCommand extends CommandEnvelope {
 }
 
 export type ProtocolCommand =
+  | HeartbeatSessionCommand
+  | EndSessionCommand
   | CreateGoalCommand
   | CreateTaskCommand
   | ClaimTaskCommand
+  | RenewLeaseCommand
+  | ReleaseLeaseCommand
   | RecordCheckpointCommand
   | CompleteTaskCommand
   | FailTaskCommand
+  | BlockTaskCommand
+  | ResumeTaskCommand
   | RetryTaskCommand
   | CancelTaskCommand
   | CancelGoalCommand;

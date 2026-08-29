@@ -7,12 +7,18 @@ export interface ProtocolValidationResult {
 
 const ENTITY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const COMMANDS = new Set([
+  'HeartbeatSession',
+  'EndSession',
   'CreateGoal',
   'CreateTask',
   'ClaimTask',
+  'RenewLease',
+  'ReleaseLease',
   'RecordCheckpoint',
   'CompleteTask',
   'FailTask',
+  'BlockTask',
+  'ResumeTask',
   'RetryTask',
   'CancelTask',
   'CancelGoal',
@@ -52,6 +58,11 @@ function validateCommandFields(
   errors: string[],
 ): void {
   switch (discriminator as ProtocolCommand['command']) {
+    case 'HeartbeatSession':
+    case 'EndSession':
+      requireEntityId(command, 'sessionId', errors);
+      requirePositiveInteger(command, 'expectedSessionRevision', errors);
+      return;
     case 'CreateGoal':
       requireString(command, 'title', errors);
       requireString(command, 'objective', errors);
@@ -69,6 +80,11 @@ function validateCommandFields(
       requireEntityId(command, 'taskId', errors);
       requireEntityId(command, 'sessionId', errors);
       requirePositiveInteger(command, 'expectedTaskRevision', errors);
+      return;
+    case 'RenewLease':
+    case 'ReleaseLease':
+      validateExecutorFields(command, errors);
+      requirePositiveInteger(command, 'expectedLeaseRevision', errors);
       return;
     case 'RecordCheckpoint':
       validateExecutorFields(command, errors);
@@ -92,6 +108,13 @@ function validateCommandFields(
       requireString(command, 'summary', errors);
       requireEvidenceArray(command, 'evidence', errors);
       return;
+    case 'BlockTask':
+      validateExecutorFields(command, errors);
+      requirePositiveInteger(command, 'expectedTaskRevision', errors);
+      requireReason(command, 'reason', errors);
+      requireEvidenceArray(command, 'evidence', errors);
+      return;
+    case 'ResumeTask':
     case 'RetryTask':
       requireEntityId(command, 'taskId', errors);
       requirePositiveInteger(command, 'expectedTaskRevision', errors);

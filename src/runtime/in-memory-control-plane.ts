@@ -14,18 +14,24 @@ import type { CanonicalDomainTarget, CanonicalDomainValidator } from './domain-v
 import { RuntimeError } from './errors.ts';
 import {
   semanticFingerprint,
+  type BlockTaskCommand,
   type CancelGoalCommand,
   type CancelTaskCommand,
   type ClaimTaskCommand,
   type CompleteTaskCommand,
   type CreateGoalCommand,
   type CreateTaskCommand,
+  type EndSessionCommand,
   type FailTaskCommand,
+  type HeartbeatSessionCommand,
   type ProtocolCommand,
   type ProtocolFailure,
   type ProtocolResponse,
   type ProtocolSuccess,
   type RecordCheckpointCommand,
+  type ReleaseLeaseCommand,
+  type RenewLeaseCommand,
+  type ResumeTaskCommand,
   type RetryTaskCommand,
 } from './protocol.ts';
 import { isProtocolEntityId, validateProtocolCommand } from './protocol-validation.ts';
@@ -51,6 +57,18 @@ export interface StartSessionInput {
   agentId: string;
 }
 
+export interface HeartbeatSessionInput {
+  workspaceId: string;
+  sessionId: string;
+  expectedSessionRevision: number;
+}
+
+export interface EndSessionInput {
+  workspaceId: string;
+  sessionId: string;
+  expectedSessionRevision: number;
+}
+
 export interface CreateGoalInput {
   workspaceId: string;
   title: string;
@@ -73,6 +91,15 @@ export interface ClaimTaskInput {
   taskId: string;
   sessionId: string;
   expectedTaskRevision: number;
+}
+
+export interface RenewLeaseInput {
+  workspaceId: string;
+  taskId: string;
+  sessionId: string;
+  leaseId: string;
+  fencingToken: number;
+  expectedLeaseRevision: number;
 }
 
 export interface ReleaseLeaseInput {
@@ -111,6 +138,23 @@ export interface FailTaskInput extends CompleteTaskInput {
   reason: Reason;
 }
 
+export interface BlockTaskInput {
+  workspaceId: string;
+  taskId: string;
+  sessionId: string;
+  leaseId: string;
+  fencingToken: number;
+  expectedTaskRevision: number;
+  reason: Reason;
+  evidence: EvidenceRef[];
+}
+
+export interface ResumeTaskInput {
+  workspaceId: string;
+  taskId: string;
+  expectedTaskRevision: number;
+}
+
 export interface RetryTaskInput {
   workspaceId: string;
   taskId: string;
@@ -131,6 +175,11 @@ export interface CancelGoalInput {
   reason: Reason;
 }
 
+export interface EndSessionResult {
+  session: Session;
+  leases: Lease[];
+}
+
 export interface ClaimTaskResult {
   task: Task;
   lease: Lease;
@@ -143,6 +192,7 @@ export interface CompleteTaskResult {
 }
 
 export type FailTaskResult = CompleteTaskResult;
+export type BlockTaskResult = CompleteTaskResult;
 
 export interface CancelTaskResult {
   task: Task;
@@ -204,15 +254,22 @@ export class InMemoryControlPlane {
     this.workspace = workspace;
   }
 
+  execute(command: HeartbeatSessionCommand): ProtocolResponse<Session>;
+  execute(command: EndSessionCommand): ProtocolResponse<EndSessionResult>;
   execute(command: CreateGoalCommand): ProtocolResponse<Goal>;
   execute(command: CreateTaskCommand): ProtocolResponse<Task>;
   execute(command: ClaimTaskCommand): ProtocolResponse<ClaimTaskResult>;
+  execute(command: RenewLeaseCommand): ProtocolResponse<Lease>;
+  execute(command: ReleaseLeaseCommand): ProtocolResponse<Lease>;
   execute(command: RecordCheckpointCommand): ProtocolResponse<Checkpoint>;
   execute(command: CompleteTaskCommand): ProtocolResponse<CompleteTaskResult>;
   execute(command: FailTaskCommand): ProtocolResponse<FailTaskResult>;
+  execute(command: BlockTaskCommand): ProtocolResponse<BlockTaskResult>;
+  execute(command: ResumeTaskCommand): ProtocolResponse<Task>;
   execute(command: RetryTaskCommand): ProtocolResponse<Task>;
   execute(command: CancelTaskCommand): ProtocolResponse<CancelTaskResult>;
   execute(command: CancelGoalCommand): ProtocolResponse<CancelGoalResult>;
+  execute(command: ProtocolCommand): ProtocolResponse;
   execute(command: ProtocolCommand): ProtocolResponse {
     const validation = validateProtocolCommand(command);
     if (!validation.valid) {
@@ -268,6 +325,7 @@ export class InMemoryControlPlane {
     });
     return clone(response);
   }
+
   getWorkspace(workspaceId: string): Workspace {
     this.assertWorkspace(workspaceId);
     return clone(this.workspace);
@@ -312,6 +370,70 @@ export class InMemoryControlPlane {
     this.assertCanonical('Session', session);
     this.sessions.set(session.id, session);
     return clone(session);
+  }
+
+  heartbeatSession(input: HeartbeatSessionInput): Session {
+    this.assertWorkspace(input.workspaceId);
+    const session = this.requireActiveSession(input.workspaceId, input.sessionId);
+    this.assertRevision(session.revision, input.expectedSessionRevision, `Session ${session.id}`);
+
+    const timestamp = this.timestamp();
+    const updated: Session = {
+      ...clone(session),
+      revision: session.revision + 1,
+      updatedAt: timestamp,
+      lastSeenAt: timestamp,
+    };
+    this.assertCanonical('Session', updated);
+    Object.assign(session, updated);
+    return clone(session);
+  }
+
+  endSession(input: EndSessionInput): EndSessionResult {
+    this.assertWorkspace(input.workspaceId);
+    const session = this.requireActiveSession(input.workspaceId, input.sessionId);
+    this.assertRevision(session.revision, input.expectedSessionRevision, `Session ${session.id}`);
+
+    const timestamp = this.timestamp();
+    const ended: Session = {
+      ...clone(session),
+      revision: session.revision + 1,
+      updatedAt: timestamp,
+      status: 'ended',
+      endedAt: timestamp,
+    };
+    this.assertCanonical('Session', ended);
+
+    const leasesToRevoke: Array<{ current: Lease; next: Lease }> = [];
+    for (const lease of this.leases.values()) {
+      if (lease.workspaceId !== input.workspaceId || lease.sessionId !== session.id) {
+        continue;
+      }
+      this.materializeLeaseExpiry(lease);
+      if (lease.status !== 'active') {
+        continue;
+      }
+      const next: Lease = {
+        ...clone(lease),
+        status: 'revoked',
+        revision: lease.revision + 1,
+        updatedAt: timestamp,
+      };
+      this.assertCanonical('Lease', next);
+      leasesToRevoke.push({ current: lease, next });
+    }
+
+    Object.assign(session, ended);
+    const revokedLeases: Lease[] = [];
+    for (const { current, next } of leasesToRevoke) {
+      Object.assign(current, next);
+      if (this.effectiveLeaseByTask.get(current.taskId) === current.id) {
+        this.effectiveLeaseByTask.delete(current.taskId);
+      }
+      revokedLeases.push(clone(current));
+    }
+
+    return { session: clone(session), leases: revokedLeases };
   }
 
   createGoal(input: CreateGoalInput): Goal {
@@ -438,6 +560,23 @@ export class InMemoryControlPlane {
     return { task: clone(task), lease: clone(lease) };
   }
 
+  renewLease(input: RenewLeaseInput): Lease {
+    this.assertWorkspace(input.workspaceId);
+    const { lease } = this.requireExecutorAuthority(input);
+    this.assertRevision(lease.revision, input.expectedLeaseRevision, `Lease ${lease.id}`);
+
+    const timestamp = this.timestamp();
+    const renewed: Lease = {
+      ...clone(lease),
+      revision: lease.revision + 1,
+      updatedAt: timestamp,
+      expiresAt: new Date(this.now().getTime() + this.leaseDurationMs).toISOString(),
+    };
+    this.assertCanonical('Lease', renewed);
+    Object.assign(lease, renewed);
+    return clone(lease);
+  }
+
   releaseLease(input: ReleaseLeaseInput): Lease {
     this.assertWorkspace(input.workspaceId);
     const { lease } = this.requireExecutorAuthority(input);
@@ -530,6 +669,72 @@ export class InMemoryControlPlane {
     this.effectiveLeaseByTask.delete(task.id);
 
     return { task: clone(task), lease: clone(lease), checkpoint: clone(checkpoint) };
+  }
+
+  blockTask(input: BlockTaskInput): BlockTaskResult {
+    this.assertWorkspace(input.workspaceId);
+    const { task, lease } = this.requireExecutorAuthority(input);
+    this.assertRevision(task.revision, input.expectedTaskRevision, `Task ${task.id}`);
+    this.assertCanonical('Reason', input.reason);
+
+    const timestamp = this.timestamp();
+    const blockedTask: Task = {
+      ...clone(task),
+      status: 'blocked',
+      statusReason: clone(input.reason),
+      revision: task.revision + 1,
+      updatedAt: timestamp,
+    };
+    const releasedLease: Lease = {
+      ...clone(lease),
+      status: 'released',
+      revision: lease.revision + 1,
+      updatedAt: timestamp,
+    };
+    this.assertCanonical('Task', blockedTask);
+    this.assertCanonical('Lease', releasedLease);
+
+    const checkpoint = this.appendCheckpoint({
+      workspaceId: input.workspaceId,
+      taskId: task.id,
+      sessionId: input.sessionId,
+      leaseId: lease.id,
+      fencingToken: input.fencingToken,
+      kind: 'blocked',
+      summary: input.reason.summary,
+      evidence: input.evidence,
+    });
+
+    Object.assign(task, blockedTask);
+    Object.assign(lease, releasedLease);
+    this.effectiveLeaseByTask.delete(task.id);
+
+    return { task: clone(task), lease: clone(lease), checkpoint: clone(checkpoint) };
+  }
+
+  resumeTask(input: ResumeTaskInput): Task {
+    this.assertWorkspace(input.workspaceId);
+    const task = this.requireTask(input.workspaceId, input.taskId);
+    this.assertRevision(task.revision, input.expectedTaskRevision, `Task ${task.id}`);
+    if (task.status !== 'blocked') {
+      throw new RuntimeError('INVALID_STATE_TRANSITION', `Task ${task.id} is not blocked.`);
+    }
+    if (this.getEffectiveLease(task.id)) {
+      throw new RuntimeError('CONFLICT', `Task ${task.id} still has an active Lease.`);
+    }
+
+    const timestamp = this.timestamp();
+    const resumed: Task = {
+      ...clone(task),
+      status: this.dependenciesSatisfied(task) ? 'ready' : 'pending',
+      revision: task.revision + 1,
+      updatedAt: timestamp,
+    };
+    delete resumed.statusReason;
+    this.assertCanonical('Task', resumed);
+    Object.assign(task, resumed);
+    delete task.statusReason;
+    return clone(task);
   }
 
   retryTask(input: RetryTaskInput): Task {
@@ -655,6 +860,18 @@ export class InMemoryControlPlane {
 
   private dispatchCommand(command: ProtocolCommand): unknown {
     switch (command.command) {
+      case 'HeartbeatSession':
+        return this.heartbeatSession({
+          workspaceId: command.workspaceId,
+          sessionId: command.sessionId,
+          expectedSessionRevision: command.expectedSessionRevision,
+        });
+      case 'EndSession':
+        return this.endSession({
+          workspaceId: command.workspaceId,
+          sessionId: command.sessionId,
+          expectedSessionRevision: command.expectedSessionRevision,
+        });
       case 'CreateGoal':
         return this.createGoal({
           workspaceId: command.workspaceId,
@@ -678,6 +895,24 @@ export class InMemoryControlPlane {
           taskId: command.taskId,
           sessionId: command.sessionId,
           expectedTaskRevision: command.expectedTaskRevision,
+        });
+      case 'RenewLease':
+        return this.renewLease({
+          workspaceId: command.workspaceId,
+          taskId: command.taskId,
+          sessionId: command.sessionId,
+          leaseId: command.leaseId,
+          fencingToken: command.fencingToken,
+          expectedLeaseRevision: command.expectedLeaseRevision,
+        });
+      case 'ReleaseLease':
+        return this.releaseLease({
+          workspaceId: command.workspaceId,
+          taskId: command.taskId,
+          sessionId: command.sessionId,
+          leaseId: command.leaseId,
+          fencingToken: command.fencingToken,
+          expectedLeaseRevision: command.expectedLeaseRevision,
         });
       case 'RecordCheckpoint':
         return this.recordCheckpoint({
@@ -715,6 +950,24 @@ export class InMemoryControlPlane {
           reason: command.reason,
           summary: command.summary,
           evidence: command.evidence,
+        });
+      case 'BlockTask':
+        return this.blockTask({
+          workspaceId: command.workspaceId,
+          taskId: command.taskId,
+          sessionId: command.sessionId,
+          leaseId: command.leaseId,
+          fencingToken: command.fencingToken,
+          expectedTaskRevision: command.expectedTaskRevision,
+          reason: command.reason,
+          evidence: command.evidence,
+        });
+      case 'ResumeTask':
+        this.assertControllerActor(command);
+        return this.resumeTask({
+          workspaceId: command.workspaceId,
+          taskId: command.taskId,
+          expectedTaskRevision: command.expectedTaskRevision,
         });
       case 'RetryTask':
         this.assertControllerActor(command);
@@ -756,7 +1009,7 @@ export class InMemoryControlPlane {
   }
 
   private assertControllerActor(
-    command: RetryTaskCommand | CancelTaskCommand | CancelGoalCommand,
+    command: ResumeTaskCommand | RetryTaskCommand | CancelTaskCommand | CancelGoalCommand,
   ): void {
     if (command.actor.type === 'human' || command.actor.type === 'system') {
       return;
@@ -800,6 +1053,7 @@ export class InMemoryControlPlane {
       },
     };
   }
+
   private protocolFailure(
     command: ProtocolCommand,
     code: RuntimeError['code'],
@@ -886,6 +1140,12 @@ export class InMemoryControlPlane {
     return checkpoint;
   }
 
+  private dependenciesSatisfied(task: Task): boolean {
+    return task.dependencyTaskIds.every(
+      (dependencyId) => this.tasks.get(dependencyId)?.status === 'succeeded',
+    );
+  }
+
   private reconcileDependentTasks(completedTask: Task): void {
     const timestamp = this.timestamp();
     for (const task of this.tasks.values()) {
@@ -898,10 +1158,7 @@ export class InMemoryControlPlane {
         continue;
       }
 
-      const dependenciesSatisfied = task.dependencyTaskIds.every(
-        (dependencyId) => this.tasks.get(dependencyId)?.status === 'succeeded',
-      );
-      if (dependenciesSatisfied) {
+      if (this.dependenciesSatisfied(task)) {
         task.status = 'ready';
         task.revision += 1;
         task.updatedAt = timestamp;
@@ -958,6 +1215,7 @@ export class InMemoryControlPlane {
       this.revokeLease(lease);
     }
   }
+
   private materializeLeaseExpiry(lease: Lease): void {
     if (lease.status !== 'active' || Date.parse(lease.expiresAt) > this.now().getTime()) {
       return;
@@ -1000,6 +1258,7 @@ export class InMemoryControlPlane {
       this.effectiveLeaseByTask.delete(lease.taskId);
     }
   }
+
   private requireActiveSession(workspaceId: string, sessionId: string): Session {
     this.assertWorkspace(workspaceId);
     const session = this.sessions.get(sessionId);
