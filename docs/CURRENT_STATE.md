@@ -6,42 +6,50 @@ This document describes what exists, not what is intended. Roadmap items are nev
 
 ## Implemented and verified
 
-The following facts were verified through GitHub repository/API evidence and executed GitHub Actions runs:
+The following facts are supported by repository state and executed GitHub Actions evidence:
 
 - Repository `tim8es/mindRail` is public with `main` as the default branch.
-- Development-foundation design and implementation records exist under `docs/superpowers/`.
-- Branch `foundation/development-foundation` contains the authoritative project index/current-state discipline, system overview, v0.1 roadmap, ADR process, accepted ADR-0001/ADR-0002, contribution/security/engineering/agent-review documentation, BUSL-1.1 license parameters, TypeScript quality configuration, foundation sentinel test, GitHub issue/PR templates, lockfile, and permanent read-only quality workflow.
-- Permanent `Quality` CI requests only `contents: read`, references no production secrets, derives Node/pnpm versions from repository package metadata, and pins GitHub-owned actions to immutable commits corresponding to `actions/checkout` v7.0.1 and `actions/setup-node` v6.4.0.
-- Domain Contracts are implemented on branch `adr/domain-contracts` under draft PR #4, stacked on draft foundation PR #1. The slice is not merged into `main`.
-- ADR-0003 is accepted for the v1 domain contract and schema-authority decision.
-- JSON Schema Draft 2020-12 under `schemas/domain/v1/` is the canonical source for 10 v1 entities plus shared definitions: `Workspace`, `Goal`, `Task`, `Agent`, `Session`, `Lease`, `Checkpoint`, `PermissionRequest`, `PermissionDecision`, and `AuditEvent`.
-- Generated TypeScript bindings under `packages/contracts/src/generated/v1/` are derived artifacts. `contracts:check-generated` compares deterministic generated output with committed files; generated files remain TypeScript-checked and Prettier-checked even though ESLint excludes them.
-- Strict Ajv Draft 2020-12 validation, positive/negative fixtures, generated-output tests, and explicit schema-invariant tests execute in Vitest.
-- The schema layer preserves Workspace isolation fields, separates Agent/Session/Task/Lease, keeps Lease fencing separate from Task state, restricts permission outcomes to `ALLOW` / `DENY` / `HUMAN_REQUIRED`, restricts policy decisions to system actors and human decisions to human actors, and keeps audit history append-only without adopting event sourcing.
-- All 10 top-level v1 entity schemas use `additionalProperties: false`. Text/array/evidence/audit extension surfaces are bounded; timestamps are RFC 3339 `date-time` values normalized to trailing `Z`; identifiers remain opaque bounded strings; mutable entities require positive revisions; lease/checkpoint/permission fencing tokens are positive integers.
-- `@mindrail/contracts` has zero runtime dependencies. `@types/node`, Ajv, ajv-formats, and json-schema-to-typescript are root dev dependencies only.
-- GitHub Actions verification run `33251135323` on branch commit `a7d13afa265589d91f0754f98c19301482bfffe9` executed and passed `pnpm install --frozen-lockfile`, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm contracts:check-generated`, `pnpm test`, and `pnpm check` as separate gates. Vitest reported 5/5 test files and 10/10 tests passing.
-- The same verification run executed `pnpm test:coverage`; V8 reported 100% statements/branches/functions/lines for the files instrumented by the current test suite. This is not a claim of a repository-wide coverage threshold.
-- The same verification run proved negative generated drift: an intentional change to generated `workspace.ts` caused `contracts:check-generated` to fail with `Generated contracts are stale: workspace.ts`; restoring the file made the command pass again and `git diff --exit-code` confirmed a clean checkout.
-- `pnpm install --frozen-lockfile` reported that the lockfile passed pnpm supply-chain policy checks for 188 entries.
-- The standard BUSL-1.1 body in `LICENSE` was compared with the SPDX-published BUSL-1.1 text; MindRail-specific parameters are kept separately above it.
+- Development foundation and Domain Contracts are merged into `main`.
+- ADR-0001 through ADR-0005 are accepted: system boundaries, licensing, domain/schema authority, runtime lifecycle/concurrency, and control-plane protocol v0.1.
+- JSON Schema Draft 2020-12 under `schemas/domain/v1/` is canonical for `Workspace`, `Goal`, `Task`, `Agent`, `Session`, `Lease`, `Checkpoint`, `PermissionRequest`, `PermissionDecision`, `AuditEvent`, and shared definitions.
+- `@mindrail/contracts` provides deterministic generated TypeScript bindings. Generated drift, strict schema validation, fixtures, schema invariants, formatting, lint, and TypeScript checks are part of the repository quality gate.
+- The Cloudflare reference persistence mapping is documented under `docs/architecture/02_CLOUDFLARE_RUNTIME_PERSISTENCE.md`; it is a design, not a deployed persistence implementation.
+- A deterministic **in-memory local reference runtime vertical slice** exists under `src/runtime/` and consumes the canonical contracts package rather than redefining domain records.
+- The runtime requires a `CanonicalDomainValidator` admission seam. Workspace, Agent, Session, Goal, Task, Lease, and Checkpoint records are validated before authoritative insertion; external `Reason` values used by fail/cancel transitions are validated before state mutation. Reference tests wire this seam to the actual strict Draft 2020-12 schemas through the repository's existing dev-only Ajv tooling, so no third-party runtime dependency was added.
+- The local runtime currently supports direct Workspace bootstrap plus Agent registration, Session start, Goal/Task creation, Task claim/release/recovery, Checkpoints, Task completion/failure/retry/cancellation, Goal cancellation, dependency release, and automatic Goal success when all Tasks succeed.
+- Session authority now has an explicit configurable `sessionTimeoutMs` policy using authoritative server time and the ADR-0004 half-open boundary. A stale Session is materialized as `expired`; its active Leases are revoked and cease to authorize checkpoint/completion or new claims. Durable running Task state remains recoverable by a replacement Session with a higher fence.
+- Lease authority is separated from Task state. A running Task may temporarily have no effective Lease and may be recovered by a new Session.
+- Same-Session duplicate claim returns the current Lease without minting a new fencing token even when a semantic duplicate still carries the pre-claim Task revision. Recovery after Lease release/expiry/session loss grants a strictly higher per-Task fencing token. Rejected Lease admission does not advance the fencing counter. Stale/revoked Lease authority cannot checkpoint or complete work.
+- Capability requirements are checked at claim time, mutable operations use expected revisions where defined by the slice, and Task creation is rejected under a terminal Goal.
+- The implemented protocol dispatcher covers `CreateGoal`, `CreateTask`, `ClaimTask`, `RecordCheckpoint`, `CompleteTask`, `FailTask`, `RetryTask`, `CancelTask`, and `CancelGoal`.
+- Protocol commands pass structural pre-admission validation before workspace admission, semantic fingerprinting, dispatch, or receipt insertion. Invalid protocol version/discriminator, malformed EntityIds/ActorRef, malformed command shapes, and invalid revision/fencing fields return `INVALID_INPUT` without mutation or idempotency-key reservation. Unknown Workspace returns a protocol `NOT_FOUND` error envelope rather than escaping as an exception and is likewise not admitted as a receipt.
+- Controller-only protocol commands `RetryTask`, `CancelTask`, and `CancelGoal` admit human/system actors and reject agent actors with `ACTOR_NOT_AUTHORIZED` before mutation.
+- Implemented protocol mutations use `(workspaceId, commandId)` as the in-memory idempotency key. Semantic fingerprints exclude `correlationId` and `causationId`; exact replay returns an immutable stored result/error snapshot while reflecting the current retry's correlation id; command-id reuse with different semantic intent returns `IDEMPOTENCY_CONFLICT`.
+- `CancelTask` revokes its effective Lease when present. `CancelGoal` terminalizes the Goal, cancels its nonterminal Tasks, and revokes their effective Leases; stale completion is rejected afterward.
+- Root runtime code explicitly links to `@mindrail/contracts` with `workspace:*`; the frozen pnpm lockfile resolves it as the local workspace package.
+- GitHub Actions full-verification run `33254737970` on commit `57491f9b153a8163b927b0a811edabe4083068cb` passed frozen installation, Prettier, ESLint, strict TypeScript checks, generated-contract drift detection, the complete Vitest suite, `pnpm check`, and `pnpm test:coverage`.
+- Canonical-admission GREEN run `33256111682` executed the focused schema-admission regressions, full `pnpm check`, and `pnpm test:coverage`. It reported **9/9 test files and 26/26 tests passing**. V8 reported 90.22% statements, 72.63% branches, 98.33% functions, and 90.17% lines overall; `src/runtime` reported 89.22% statements and 89.16% lines. No repository-wide coverage threshold is claimed.
+- Pre-admission/session hardening run `33256869136` passed the focused review regressions, full `pnpm check`, and `pnpm test:coverage` before committing the fix and deleting its one-time workflow.
+- Permanent `Quality` CI remains read-only (`contents: read`) and uses pinned GitHub-owned action commits.
 
-## Implemented but not fully enforced
+## Implemented but not yet durable / externally integrated
 
-- `Quality` is executable and green on verified Domain Contracts commits, but it is not yet a mandatory repository-level merge gate on `main`.
-- Issue #3 tracks enabling and verifying the minimal `main` protection/ruleset.
-- JSON Schema enforces structural permission-decision supersession shape (`sequence = 1` has no predecessor; later decisions require `supersedesDecisionId`), but cross-record chain continuity remains a future runtime invariant.
-- Workspace cross-reference resolution, capability satisfaction, dependency acyclicity, one-active-lease enforcement, monotonic lease fencing, stale-actor rejection, optimistic revision comparison, and append-only persistence behavior require state/storage and are intentionally deferred to the local runtime slice.
+- Local runtime correctness is currently in-memory and single-process. It proves state-machine and protocol semantics but does not survive process restart.
+- Command receipts, Lease counters, Tasks, Goals, Checkpoints, Sessions, and other runtime state are not persisted yet.
+- The canonical validator is an injected core boundary; the current executable reference composition proving it against the real schemas lives in test tooling. Production/deployed composition still needs to provide the same canonical validation boundary.
+- Session timeout is enforced, but public `HeartbeatSession` and `EndSession` commands are not implemented yet; without heartbeat support, a long-lived real client cannot extend Session liveness through the protocol.
+- Goal-level ordering is deterministic inside the synchronous local runtime. The future D1/Durable Objects reference implementation must independently prove the concurrency guarantees from ADR-0004 and the persistence design.
+- `Quality` is executable and green on verified branches, but issue #3 still tracks enabling the repository-level required merge gate on `main`.
 
-## Planned
+## Next implementation slices
 
-- Vendor-neutral agent/control-plane protocol.
-- Deterministic task/state transition and permission-policy engine.
-- Reference runtime and persistence interfaces, including the cross-record invariants documented by ADR-0003.
-- GitHub integration.
-- Cloudflare Workers/Durable Objects/D1 reference deployment.
-- Codex, ChatGPT, MCP, and generic HTTP integration paths.
-- Optional projections such as Google Sheets.
+- Complete the remaining protocol/runtime command surface needed for v0.1, including Session heartbeat/end, Lease renewal, block/resume, and permission commands.
+- Implement deterministic permission-policy evaluation and human decision handling.
+- Add a persistence interface and durable local/reference storage implementation with command receipts, audit events, revision/fencing guards, canonical admission, and restart recovery.
+- Implement the Cloudflare Workers/Durable Objects/D1 reference deployment behind the vendor-neutral runtime interfaces.
+- Add transport adapters for HTTP and MCP without changing core lifecycle semantics.
+- Add GitHub integration and minimal Codex/ChatGPT/generic agent bootstrap paths.
+- Add optional human-facing projections only after runtime state is durable.
 
 ## External / non-technical follow-up
 
@@ -50,4 +58,4 @@ The following facts were verified through GitHub repository/API evidence and exe
 
 ## Explicit non-capabilities
 
-MindRail currently does **not** orchestrate agents, issue runtime permissions, persist tasks, run a cloud control plane, enforce cross-record lease/revision/workspace invariants, or autonomously continue ChatGPT/Codex sessions. Those remain later implementation slices.
+MindRail does **not yet** provide a production control plane. It does not persist operational state, expose a deployed HTTP/MCP service, issue runtime permissions, run the Cloudflare reference deployment, integrate with real Codex/ChatGPT sessions, or continue agents unattended across process/runtime termination. The current executable milestone is a verified deterministic in-memory control-plane slice.
