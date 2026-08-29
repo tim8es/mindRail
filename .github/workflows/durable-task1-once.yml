@@ -35,12 +35,12 @@ jobs:
         run: pnpm exec prettier --write src/persistence/ports.ts src/persistence/cloudflare/d1-runtime-persistence.ts test/persistence/receipt-parity.test.ts
       - name: Focused persistence verification
         run: pnpm vitest run test/persistence/receipt-parity.test.ts test/persistence/d1-runtime-persistence.test.ts test/persistence/d1-runtime-persistence-invariants.test.ts test/persistence/d1-runtime-persistence-review.test.ts
+      - name: Remove temporary harness
+        run: git rm .github/workflows/durable-task1-once.yml scripts/tmp-durable-task1.mjs
       - name: Full check
         run: pnpm check
       - name: Coverage
         run: pnpm test:coverage
-      - name: Remove temporary harness
-        run: git rm .github/workflows/durable-task1-once.yml scripts/tmp-durable-task1.mjs
       - name: Commit and push verified Task 1
         run: |
           git config user.name "github-actions[bot]"
