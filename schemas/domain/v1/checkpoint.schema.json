@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mindrail:schema:domain:v1:checkpoint",
+  "title": "Checkpoint",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "workspaceId", "taskId", "sessionId", "leaseId", "fencingToken", "createdAt", "kind", "summary", "evidence"],
+  "properties": {
+    "id": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "workspaceId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "taskId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "sessionId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "leaseId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "fencingToken": { "type": "integer", "minimum": 1 },
+    "createdAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" },
+    "kind": { "type": "string", "enum": ["progress", "handoff", "blocked", "result"] },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "evidence": {
+      "type": "array",
+      "maxItems": 32,
+      "items": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EvidenceRef" }
+    },
+    "progressPercent": { "type": "integer", "minimum": 0, "maximum": 100 }
+  }
+}
