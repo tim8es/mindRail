@@ -21,9 +21,11 @@ import {
 import type { CanonicalDomainValidator } from '../runtime/domain-validation.ts';
 import {
   InMemoryControlPlane,
+  type BlockTaskResult,
   type ClaimTaskResult,
   type CompleteTaskResult,
   type EndSessionResult,
+  type FailTaskResult,
 } from '../runtime/in-memory-control-plane.ts';
 import type { RequestPermissionResult } from '../runtime/permission-service.ts';
 import {
@@ -253,7 +255,10 @@ function isFirstDurableLoopCommand(command: ProtocolCommand): boolean {
     command.command === 'RecordCheckpoint' ||
     command.command === 'RequestPermission' ||
     command.command === 'RecordPermissionDecision' ||
-    command.command === 'CompleteTask'
+    command.command === 'CompleteTask' ||
+    command.command === 'FailTask' ||
+    command.command === 'BlockTask' ||
+    command.command === 'ResumeTask'
   );
 }
 
@@ -481,6 +486,62 @@ async function commitDurableSuccess(
         lease: committed.value.lease,
         checkpoint: committed.value.checkpoint,
       });
+    }
+    case 'FailTask': {
+      const result = semanticResponse.result as FailTaskResult;
+      return resolveMutationResult(
+        command,
+        await options.persistence.failTask({
+          workspaceId: command.workspaceId,
+          task: result.task,
+          lease: result.lease,
+          checkpoint: result.checkpoint,
+          expectedTaskRevision: command.expectedTaskRevision,
+          now: result.task.updatedAt,
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
+        }),
+      );
+    }
+    case 'BlockTask': {
+      const result = semanticResponse.result as BlockTaskResult;
+      return resolveMutationResult(
+        command,
+        await options.persistence.blockTask({
+          workspaceId: command.workspaceId,
+          task: result.task,
+          lease: result.lease,
+          checkpoint: result.checkpoint,
+          expectedTaskRevision: command.expectedTaskRevision,
+          now: result.task.updatedAt,
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
+        }),
+      );
+    }
+    case 'ResumeTask': {
+      const result = semanticResponse.result as Task;
+      return resolveMutationResult(
+        command,
+        await options.persistence.resumeTask({
+          task: result,
+          expectedRevision: command.expectedTaskRevision,
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
+        }),
+      );
     }
     default:
       return commandFailure(command, 'UNSUPPORTED_OPERATION', 'Command is not durable yet.');

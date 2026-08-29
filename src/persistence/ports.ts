@@ -145,6 +145,23 @@ export interface CompleteTaskCommitValue {
   goal?: Goal;
 }
 
+export interface TaskOutcomeCommitInput {
+  workspaceId: string;
+  task: Task;
+  lease: Lease;
+  checkpoint: Checkpoint;
+  expectedTaskRevision: number;
+  now: string;
+  receipt?: CommandReceiptInput;
+  auditEvent?: AuditEvent;
+}
+
+export interface TaskOutcomeCommitValue {
+  task: Task;
+  lease: Lease;
+  checkpoint: Checkpoint;
+}
+
 export interface DurableRuntimePersistence {
   bootstrapWorkspace(workspace: Workspace): Promise<void>;
   createAgent(input: {
@@ -209,6 +226,14 @@ export interface DurableRuntimePersistence {
   completeTask(
     input: CompleteTaskCommitInput,
   ): Promise<MutationCommitResult<CompleteTaskCommitValue>>;
+  failTask(input: TaskOutcomeCommitInput): Promise<MutationCommitResult<TaskOutcomeCommitValue>>;
+  blockTask(input: TaskOutcomeCommitInput): Promise<MutationCommitResult<TaskOutcomeCommitValue>>;
+  resumeTask(input: {
+    task: Task;
+    expectedRevision: number;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Task>>;
   appendAuditEvent(input: { auditEvent: AuditEvent }): Promise<void>;
   appendPermissionRequestWithInitialDecision(input: {
     request: PermissionRequest;
