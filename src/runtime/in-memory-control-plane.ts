@@ -41,10 +41,12 @@ import {
   type ProtocolSuccess,
   type RecordPermissionDecisionCommand,
   type RecordCheckpointCommand,
+  type RegisterAgentCommand,
   type ReleaseLeaseCommand,
   type RenewLeaseCommand,
   type ResumeTaskCommand,
   type RequestPermissionCommand,
+  type StartSessionCommand,
   type RetryTaskCommand,
 } from './protocol.ts';
 import { isProtocolEntityId, validateProtocolCommand } from './protocol-validation.ts';
@@ -278,6 +280,8 @@ export class InMemoryControlPlane {
     this.workspace = workspace;
   }
 
+  execute(command: RegisterAgentCommand): ProtocolResponse<Agent>;
+  execute(command: StartSessionCommand): ProtocolResponse<Session>;
   execute(command: HeartbeatSessionCommand): ProtocolResponse<Session>;
   execute(command: EndSessionCommand): ProtocolResponse<EndSessionResult>;
   execute(command: CreateGoalCommand): ProtocolResponse<Goal>;
@@ -911,6 +915,17 @@ export class InMemoryControlPlane {
 
   private dispatchCommand(command: ProtocolCommand): unknown {
     switch (command.command) {
+      case 'RegisterAgent':
+        return this.registerAgent({
+          workspaceId: command.workspaceId,
+          displayName: command.displayName,
+          capabilities: command.capabilities,
+        });
+      case 'StartSession':
+        return this.startSession({
+          workspaceId: command.workspaceId,
+          agentId: command.agentId,
+        });
       case 'HeartbeatSession':
         return this.heartbeatSession({
           workspaceId: command.workspaceId,

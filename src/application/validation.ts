@@ -135,14 +135,8 @@ export function parseApplicationCommand(
   const shapeError = validateClosedShape(record, COMMAND_COMMON, COMMAND_SHAPES[commandName]);
   if (shapeError !== undefined) return invalid(shapeError);
 
-  if (isRuntimeProtocolCommand(commandName)) {
-    const validation = validateProtocolCommand(record);
-    if (!validation.valid) return invalid(validation.errors?.[0] ?? 'command is invalid');
-    return { ok: true, value: record as unknown as ApplicationCommand };
-  }
-
-  const fieldError = validateParallelCommand(commandName, record);
-  if (fieldError !== undefined) return invalid(fieldError);
+  const validation = validateProtocolCommand(record);
+  if (!validation.valid) return invalid(validation.errors?.[0] ?? 'command is invalid');
   return { ok: true, value: record as unknown as ApplicationCommand };
 }
 
@@ -206,30 +200,6 @@ function validateClosedShape(
   return missing === undefined ? undefined : `missing required field: ${missing}`;
 }
 
-function validateParallelCommand(
-  commandName: 'RegisterAgent' | 'StartSession',
-  record: Record<string, unknown>,
-): string | undefined {
-  switch (commandName) {
-    case 'RegisterAgent':
-      if (!isBoundedString(record.displayName, 1, 200)) {
-        return 'displayName must be a bounded string';
-      }
-      if (!isStringArray(record.capabilities)) return 'capabilities must be an array of strings';
-      return undefined;
-    case 'StartSession':
-      return requireEntityFields(record, ['agentId']);
-  }
-}
-
-type RuntimeProtocolCommandName = Exclude<ApplicationCommandName, 'RegisterAgent' | 'StartSession'>;
-
-function isRuntimeProtocolCommand(
-  name: ApplicationCommandName,
-): name is RuntimeProtocolCommandName {
-  return name !== 'RegisterAgent' && name !== 'StartSession';
-}
-
 function entityFieldsForQuery(queryName: ApplicationQueryName): readonly string[] {
   switch (queryName) {
     case 'GetGoal':
@@ -260,14 +230,6 @@ function isListQuery(queryName: ApplicationQueryName): boolean {
   return queryName.startsWith('List');
 }
 
-function requireEntityFields(
-  record: Record<string, unknown>,
-  fields: readonly string[],
-): string | undefined {
-  const invalidField = fields.find((field) => !isProtocolEntityId(record[field]));
-  return invalidField === undefined ? undefined : `${invalidField} must be an EntityId`;
-}
-
 function isActorRef(value: unknown): value is ActorRef {
   if (!isRecord(value)) return false;
   if (Object.keys(value).some((key) => key !== 'type' && key !== 'id')) return false;
@@ -287,14 +249,6 @@ function isBoundedLimit(value: unknown): value is number {
 
 function isOpaqueCursor(value: unknown): value is string {
   return typeof value === 'string' && value.length >= 1 && value.length <= 512;
-}
-
-function isBoundedString(value: unknown, min: number, max: number): value is string {
-  return typeof value === 'string' && value.length >= min && value.length <= max;
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((entry) => isBoundedString(entry, 1, 128));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

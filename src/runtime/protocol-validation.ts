@@ -8,6 +8,8 @@ export interface ProtocolValidationResult {
 const ENTITY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const NAMESPACED_NAME_PATTERN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 const COMMANDS = new Set([
+  'RegisterAgent',
+  'StartSession',
   'HeartbeatSession',
   'EndSession',
   'CreateGoal',
@@ -61,6 +63,13 @@ function validateCommandFields(
   errors: string[],
 ): void {
   switch (discriminator as ProtocolCommand['command']) {
+    case 'RegisterAgent':
+      requireBoundedString(command, 'displayName', 1, 160, errors);
+      requireNamespacedNameArray(command, 'capabilities', 64, errors);
+      return;
+    case 'StartSession':
+      requireEntityId(command, 'agentId', errors);
+      return;
     case 'HeartbeatSession':
     case 'EndSession':
       requireEntityId(command, 'sessionId', errors);
@@ -231,6 +240,29 @@ function requireStringArray(record: Record<string, unknown>, key: string, errors
   const value = record[key];
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
     errors.push(`${key} must be an array of strings`);
+  }
+}
+
+function requireNamespacedNameArray(
+  record: Record<string, unknown>,
+  key: string,
+  maxItems: number,
+  errors: string[],
+): void {
+  const value = record[key];
+  if (
+    !Array.isArray(value) ||
+    value.length > maxItems ||
+    new Set(value).size !== value.length ||
+    value.some(
+      (entry) =>
+        typeof entry !== 'string' ||
+        entry.length < 1 ||
+        entry.length > 128 ||
+        !NAMESPACED_NAME_PATTERN.test(entry),
+    )
+  ) {
+    errors.push(`${key} must be a unique array of at most ${maxItems} NamespacedNames`);
   }
 }
 
