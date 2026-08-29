@@ -182,11 +182,7 @@ function requireNamespacedName(
   errors: string[],
 ): void {
   const value = record[key];
-  if (
-    typeof value !== 'string' ||
-    value.length > 128 ||
-    !NAMESPACED_NAME_PATTERN.test(value)
-  ) {
+  if (typeof value !== 'string' || value.length > 128 || !NAMESPACED_NAME_PATTERN.test(value)) {
     errors.push(`${key} must be a NamespacedName`);
   }
 }

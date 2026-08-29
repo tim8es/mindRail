@@ -251,9 +251,7 @@ function isPolicyRef(value: PermissionPolicy['ref']): boolean {
 
 function isPolicyEvaluation(value: PermissionPolicyEvaluation): boolean {
   return (
-    (value.outcome === 'ALLOW' ||
-      value.outcome === 'DENY' ||
-      value.outcome === 'HUMAN_REQUIRED') &&
+    (value.outcome === 'ALLOW' || value.outcome === 'DENY' || value.outcome === 'HUMAN_REQUIRED') &&
     typeof value.reasonCode === 'string' &&
     NAMESPACED_NAME_PATTERN.test(value.reasonCode) &&
     value.reasonCode.length <= 128

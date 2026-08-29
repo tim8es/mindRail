@@ -30,7 +30,9 @@ function createRuntime(
     leaseDurationMs: 10 * 60_000,
     sessionTimeoutMs: 60_000,
     validateCanonicalDomainRecord: canonicalDomainValidator,
-    ...(options.permissionPolicy === undefined ? {} : { permissionPolicy: options.permissionPolicy }),
+    ...(options.permissionPolicy === undefined
+      ? {}
+      : { permissionPolicy: options.permissionPolicy }),
   });
 
   return {
@@ -295,12 +297,7 @@ describe('permission engine v0.1', () => {
     );
 
     const approved = runtime.recordPermissionDecision(
-      decisionInput(
-        pending.request,
-        pending.decision,
-        { type: 'human', id: 'human-1' },
-        'ALLOW',
-      ),
+      decisionInput(pending.request, pending.decision, { type: 'human', id: 'human-1' }, 'ALLOW'),
     );
     expect(approved).toMatchObject({
       sequence: 2,
@@ -362,12 +359,7 @@ describe('permission engine v0.1', () => {
     });
 
     const lateAllow = runtime.recordPermissionDecision(
-      decisionInput(
-        pending.request,
-        pending.decision,
-        { type: 'human', id: 'human-1' },
-        'ALLOW',
-      ),
+      decisionInput(pending.request, pending.decision, { type: 'human', id: 'human-1' }, 'ALLOW'),
     );
     expect(lateAllow.outcome).toBe('ALLOW');
     expect(
@@ -440,7 +432,9 @@ describe('permission engine v0.1', () => {
     expect(replay.correlationId).toBe('corr-retry');
     expect(replayResult.request.id).toBe(firstResult.request.id);
     expect(replayResult.decision.id).toBe(firstResult.decision.id);
-    expect(runtime.getPermissionRequest('ws-1', firstResult.request.id)).toEqual(firstResult.request);
+    expect(runtime.getPermissionRequest('ws-1', firstResult.request.id)).toEqual(
+      firstResult.request,
+    );
     expect(runtime.listPermissionDecisions('ws-1', firstResult.request.id)).toEqual([
       firstResult.decision,
     ]);
@@ -498,12 +492,7 @@ describe('permission engine v0.1', () => {
     const allowed = requestPermission(runtime, execution, 'workspace.read');
     const pending = requestPermission(runtime, execution, 'repository.write');
     const deniedByHuman = runtime.recordPermissionDecision(
-      decisionInput(
-        pending.request,
-        pending.decision,
-        { type: 'human', id: 'human-1' },
-        'DENY',
-      ),
+      decisionInput(pending.request, pending.decision, { type: 'human', id: 'human-1' }, 'DENY'),
     );
 
     expect(canonicalDomainValidator('PermissionRequest', allowed.request).valid).toBe(true);
