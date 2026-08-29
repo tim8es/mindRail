@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { InMemoryControlPlane } from '../../src/runtime/in-memory-control-plane.ts';
+import { canonicalDomainValidator } from './canonical-domain-validator.ts';
 import { RuntimeError } from '../../src/runtime/errors.ts';
 
 describe('in-memory control plane', () => {
@@ -13,6 +14,7 @@ describe('in-memory control plane', () => {
       now: () => new Date(now),
       idFactory: (kind) => `${kind}-${++sequence}`,
       leaseDurationMs: 60_000,
+      validateCanonicalDomainRecord: canonicalDomainValidator,
     });
 
     const agent = runtime.registerAgent({
@@ -94,6 +96,7 @@ describe('in-memory control plane', () => {
       now: () => new Date(now),
       idFactory: (kind) => `${kind}-${++sequence}`,
       leaseDurationMs: 60_000,
+      validateCanonicalDomainRecord: canonicalDomainValidator,
     });
 
     const firstAgent = runtime.registerAgent({
@@ -198,6 +201,7 @@ describe('in-memory control plane', () => {
       now: () => new Date(now),
       idFactory: (kind) => `${kind}-${++sequence}`,
       leaseDurationMs: 60_000,
+      validateCanonicalDomainRecord: canonicalDomainValidator,
     });
 
     const command = {

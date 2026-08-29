@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { InMemoryControlPlane } from '../../src/runtime/in-memory-control-plane.ts';
+import { canonicalDomainValidator } from './canonical-domain-validator.ts';
 import { RuntimeError } from '../../src/runtime/errors.ts';
 
 function createRuntime(): InMemoryControlPlane {
@@ -12,6 +13,7 @@ function createRuntime(): InMemoryControlPlane {
     now: () => new Date(now),
     idFactory: (kind) => `${kind}-${++sequence}`,
     leaseDurationMs: 60_000,
+    validateCanonicalDomainRecord: canonicalDomainValidator,
   });
 }
 

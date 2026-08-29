@@ -35,7 +35,9 @@ const ajv = new Ajv2020({
 });
 addFormats(ajv);
 
-for (const name of readdirSync(schemaDirectory).filter((entry) => entry.endsWith('.schema.json')).sort()) {
+for (const name of readdirSync(schemaDirectory)
+  .filter((entry) => entry.endsWith('.schema.json'))
+  .sort()) {
   const schema = JSON.parse(readFileSync(join(schemaDirectory, name), 'utf8')) as AnySchemaObject;
   ajv.addSchema(schema);
 }

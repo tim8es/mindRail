@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { RuntimeError } from '../../src/runtime/errors.ts';
 import { InMemoryControlPlane } from '../../src/runtime/in-memory-control-plane.ts';
+import { canonicalDomainValidator } from './canonical-domain-validator.ts';
 
 function createRuntime() {
   let sequence = 0;
@@ -12,6 +13,7 @@ function createRuntime() {
     now: () => new Date(now),
     idFactory: (kind) => `${kind}-${++sequence}`,
     leaseDurationMs: 60_000,
+    validateCanonicalDomainRecord: canonicalDomainValidator,
   });
 }
 
@@ -318,7 +320,6 @@ describe('pre-merge runtime review regressions', () => {
 
     expect(runtime.listTaskCheckpoints('ws-1', task.id)).toHaveLength(0);
   });
-
 });
 
 function expectInvalidInput(action: () => unknown): void {

@@ -10,6 +10,7 @@ import type {
   Workspace,
 } from '@mindrail/contracts';
 
+import type { CanonicalDomainTarget, CanonicalDomainValidator } from './domain-validation.ts';
 import { RuntimeError } from './errors.ts';
 import {
   semanticFingerprint,
@@ -34,6 +35,7 @@ export interface InMemoryControlPlaneOptions {
   now: () => Date;
   idFactory: (kind: string) => string;
   leaseDurationMs: number;
+  validateCanonicalDomainRecord: CanonicalDomainValidator;
 }
 
 export interface RegisterAgentInput {
@@ -161,6 +163,7 @@ export class InMemoryControlPlane {
   private readonly now: () => Date;
   private readonly idFactory: (kind: string) => string;
   private readonly leaseDurationMs: number;
+  private readonly validateCanonicalDomainRecord: CanonicalDomainValidator;
 
   private readonly agents = new Map<string, Agent>();
   private readonly sessions = new Map<string, Session>();
@@ -180,8 +183,9 @@ export class InMemoryControlPlane {
     this.now = options.now;
     this.idFactory = options.idFactory;
     this.leaseDurationMs = options.leaseDurationMs;
+    this.validateCanonicalDomainRecord = options.validateCanonicalDomainRecord;
     const timestamp = this.timestamp();
-    this.workspace = {
+    const workspace: Workspace = {
       id: options.workspaceId,
       revision: 1,
       createdAt: timestamp,
@@ -189,6 +193,8 @@ export class InMemoryControlPlane {
       name: options.workspaceName,
       status: 'active',
     };
+    this.assertCanonical('Workspace', workspace);
+    this.workspace = workspace;
   }
 
   execute(command: CreateGoalCommand): ProtocolResponse<Goal>;
@@ -260,6 +266,7 @@ export class InMemoryControlPlane {
       status: 'active',
       capabilities: [...input.capabilities],
     };
+    this.assertCanonical('Agent', agent);
     this.agents.set(agent.id, agent);
     return clone(agent);
   }
@@ -282,6 +289,7 @@ export class InMemoryControlPlane {
       status: 'active',
       lastSeenAt: timestamp,
     };
+    this.assertCanonical('Session', session);
     this.sessions.set(session.id, session);
     return clone(session);
   }
@@ -304,6 +312,7 @@ export class InMemoryControlPlane {
       successCriteria: [...input.successCriteria] as [string, ...string[]],
       status: 'active',
     };
+    this.assertCanonical('Goal', goal);
     this.goals.set(goal.id, goal);
     return clone(goal);
   }
@@ -346,6 +355,7 @@ export class InMemoryControlPlane {
         ? 'ready'
         : 'pending',
     };
+    this.assertCanonical('Task', task);
     this.tasks.set(task.id, task);
     this.checkpointsByTask.set(task.id, []);
     this.fencingCounterByTask.set(task.id, 0);
@@ -381,7 +391,6 @@ export class InMemoryControlPlane {
 
     const timestamp = this.timestamp();
     const nextFence = (this.fencingCounterByTask.get(task.id) ?? 0) + 1;
-    this.fencingCounterByTask.set(task.id, nextFence);
 
     const lease: Lease = {
       id: this.idFactory('lease'),
@@ -395,6 +404,8 @@ export class InMemoryControlPlane {
       fencingToken: nextFence,
       expiresAt: new Date(this.now().getTime() + this.leaseDurationMs).toISOString(),
     };
+    this.assertCanonical('Lease', lease);
+    this.fencingCounterByTask.set(task.id, nextFence);
     this.leases.set(lease.id, lease);
     this.effectiveLeaseByTask.set(task.id, lease.id);
 
@@ -474,6 +485,7 @@ export class InMemoryControlPlane {
     this.assertWorkspace(input.workspaceId);
     const { task, lease } = this.requireExecutorAuthority(input);
     this.assertRevision(task.revision, input.expectedTaskRevision, `Task ${task.id}`);
+    this.assertCanonical('Reason', input.reason);
 
     const checkpoint = this.appendCheckpoint({
       workspaceId: input.workspaceId,
@@ -529,6 +541,7 @@ export class InMemoryControlPlane {
     if (!isCancellableTaskStatus(task.status)) {
       throw new RuntimeError('INVALID_STATE_TRANSITION', `Task ${task.id} is terminal.`);
     }
+    this.assertCanonical('Reason', input.reason);
 
     const timestamp = this.timestamp();
     const lease = this.getEffectiveLease(task.id);
@@ -557,6 +570,7 @@ export class InMemoryControlPlane {
     if (goal.status !== 'active') {
       throw new RuntimeError('INVALID_STATE_TRANSITION', `Goal ${goal.id} is terminal.`);
     }
+    this.assertCanonical('Reason', input.reason);
 
     const timestamp = this.timestamp();
     goal.status = 'cancelled';
@@ -708,6 +722,19 @@ export class InMemoryControlPlane {
     }
   }
 
+  private assertCanonical(target: CanonicalDomainTarget, value: unknown): void {
+    const validation = this.validateCanonicalDomainRecord(target, value);
+    if (validation.valid) {
+      return;
+    }
+    const details = validation.errors?.slice(0, 3).join('; ');
+    const message =
+      details === undefined || details.length === 0
+        ? `${target} violates canonical domain schema.`
+        : `${target} violates canonical domain schema. ${details}`;
+    throw new RuntimeError('INVALID_INPUT', message);
+  }
+
   private assertControllerActor(
     command: RetryTaskCommand | CancelTaskCommand | CancelGoalCommand,
   ): void {
@@ -811,6 +838,7 @@ export class InMemoryControlPlane {
       ...input,
       evidence: clone(input.evidence),
     };
+    this.assertCanonical('Checkpoint', checkpoint);
     const checkpoints = this.checkpointsByTask.get(input.taskId);
     if (!checkpoints) {
       throw new RuntimeError('NOT_FOUND', `Task ${input.taskId} was not found.`);
