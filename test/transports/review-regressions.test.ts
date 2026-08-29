@@ -37,7 +37,7 @@ describe('transport integration regressions', () => {
     );
   });
   it('delegates every currently implemented runtime mutation', () => {
-    expect(IN_MEMORY_UNSUPPORTED_COMMANDS).toEqual(['RegisterAgent', 'StartSession']);
+    expect(IN_MEMORY_UNSUPPORTED_COMMANDS).toEqual([]);
   });
   it('rejects noncanonical permission input before dispatch', () => {
     const base = {

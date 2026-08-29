@@ -11,6 +11,17 @@ interface CommandEnvelope {
   causationId?: string;
 }
 
+export interface RegisterAgentCommand extends CommandEnvelope {
+  command: 'RegisterAgent';
+  displayName: string;
+  capabilities: string[];
+}
+
+export interface StartSessionCommand extends CommandEnvelope {
+  command: 'StartSession';
+  agentId: string;
+}
+
 export interface HeartbeatSessionCommand extends CommandEnvelope {
   command: 'HeartbeatSession';
   sessionId: string;
@@ -158,6 +169,8 @@ export interface CancelGoalCommand extends CommandEnvelope {
 }
 
 export type ProtocolCommand =
+  | RegisterAgentCommand
+  | StartSessionCommand
   | HeartbeatSessionCommand
   | EndSessionCommand
   | CreateGoalCommand

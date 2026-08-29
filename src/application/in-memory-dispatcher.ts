@@ -2,23 +2,18 @@ import type { Checkpoint } from '@mindrail/contracts';
 
 import { RuntimeError } from '../runtime/errors.ts';
 import { InMemoryControlPlane } from '../runtime/in-memory-control-plane.ts';
-import type { ProtocolCommand } from '../runtime/protocol.ts';
 import type { ApplicationDispatcher } from './ports.ts';
 import type {
-  ApplicationCommand,
   ApplicationCommandName,
   ApplicationQuery,
   ApplicationQueryName,
-  CommandFailure,
   CommandResponse,
   QueryFailure,
   QueryResponse,
 } from './protocol.ts';
 
-export const IN_MEMORY_UNSUPPORTED_COMMANDS = [
-  'RegisterAgent',
-  'StartSession',
-] as const satisfies readonly ApplicationCommandName[];
+export const IN_MEMORY_UNSUPPORTED_COMMANDS =
+  [] as const satisfies readonly ApplicationCommandName[];
 
 export const IN_MEMORY_UNSUPPORTED_QUERIES = [
   'ListGoals',
@@ -37,10 +32,7 @@ export function createInMemoryApplicationDispatcher(
 ): ApplicationDispatcher {
   return {
     dispatchCommand(command) {
-      if (isCurrentRuntimeCommand(command)) {
-        return controlPlane.execute(command);
-      }
-      return unsupportedCommand(command);
+      return controlPlane.execute(command);
     },
 
     dispatchQuery(query) {
@@ -80,26 +72,6 @@ export function createInMemoryApplicationDispatcher(
         }
         return queryFailure(query, 'INTERNAL_ERROR', 'Application query failed.');
       }
-    },
-  };
-}
-
-function isCurrentRuntimeCommand(command: ApplicationCommand): command is ProtocolCommand {
-  return !IN_MEMORY_UNSUPPORTED_COMMANDS.includes(
-    command.command as (typeof IN_MEMORY_UNSUPPORTED_COMMANDS)[number],
-  );
-}
-
-function unsupportedCommand(command: ApplicationCommand): CommandFailure {
-  return {
-    protocolVersion: '0.1',
-    commandId: command.commandId,
-    ...(command.correlationId === undefined ? {} : { correlationId: command.correlationId }),
-    replayed: false,
-    error: {
-      code: 'UNSUPPORTED_OPERATION',
-      message: `${command.command} is not integrated in this runtime composition.`,
-      retryable: false,
     },
   };
 }

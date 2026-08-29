@@ -64,29 +64,7 @@ export type ApplicationErrorCode =
   | 'UNSUPPORTED_OPERATION'
   | 'INTERNAL_ERROR';
 
-interface CommandEnvelope {
-  protocolVersion: '0.1';
-  commandId: string;
-  workspaceId: string;
-  actor: ActorRef;
-  correlationId?: string;
-  causationId?: string;
-}
-
-export interface RegisterAgentCommand extends CommandEnvelope {
-  command: 'RegisterAgent';
-  displayName: string;
-  capabilities: string[];
-}
-
-export interface StartSessionCommand extends CommandEnvelope {
-  command: 'StartSession';
-  agentId: string;
-}
-
-export type ParallelCommand = RegisterAgentCommand | StartSessionCommand;
-
-export type ApplicationCommand = ProtocolCommand | ParallelCommand;
+export type ApplicationCommand = ProtocolCommand;
 
 interface QueryEnvelope {
   protocolVersion: '0.1';
