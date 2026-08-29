@@ -1,4 +1,4 @@
-import type { ActorRef, EvidenceRef, Goal, Lease, Task } from '@mindrail/contracts';
+import type { ActorRef, EvidenceRef, Reason } from '@mindrail/contracts';
 
 import type { RuntimeErrorCode } from './errors.ts';
 
@@ -58,19 +58,48 @@ export interface CompleteTaskCommand extends CommandEnvelope {
   evidence: EvidenceRef[];
 }
 
+export interface FailTaskCommand extends CommandEnvelope {
+  command: 'FailTask';
+  taskId: string;
+  sessionId: string;
+  leaseId: string;
+  fencingToken: number;
+  expectedTaskRevision: number;
+  reason: Reason;
+  summary: string;
+  evidence: EvidenceRef[];
+}
+
+export interface RetryTaskCommand extends CommandEnvelope {
+  command: 'RetryTask';
+  taskId: string;
+  expectedTaskRevision: number;
+}
+
+export interface CancelTaskCommand extends CommandEnvelope {
+  command: 'CancelTask';
+  taskId: string;
+  expectedTaskRevision: number;
+  reason: Reason;
+}
+
+export interface CancelGoalCommand extends CommandEnvelope {
+  command: 'CancelGoal';
+  goalId: string;
+  expectedGoalRevision: number;
+  reason: Reason;
+}
+
 export type ProtocolCommand =
   | CreateGoalCommand
   | CreateTaskCommand
   | ClaimTaskCommand
   | RecordCheckpointCommand
-  | CompleteTaskCommand;
-
-export type ProtocolResult =
-  | Goal
-  | Task
-  | { task: Task; lease: Lease }
-  | { task: Task; lease: Lease; checkpoint: unknown }
-  | unknown;
+  | CompleteTaskCommand
+  | FailTaskCommand
+  | RetryTaskCommand
+  | CancelTaskCommand
+  | CancelGoalCommand;
 
 export interface ProtocolSuccess<T = unknown> {
   protocolVersion: '0.1';
