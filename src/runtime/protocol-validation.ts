@@ -120,7 +120,7 @@ function validateCommandFields(
     case 'RequestPermission':
       validateExecutorFields(command, errors);
       requireNamespacedName(command, 'permission', errors);
-      requireString(command, 'justification', errors);
+      requireBoundedString(command, 'justification', 1, 2000, errors);
       optionalResource(command, 'resource', errors);
       return;
     case 'RecordPermissionDecision':
@@ -130,7 +130,7 @@ function validateCommandFields(
       }
       requireEntityId(command, 'expectedPreviousDecisionId', errors);
       requireNamespacedName(command, 'reasonCode', errors);
-      optionalString(command, 'reason', errors);
+      optionalBoundedString(command, 'reason', 1, 1000, errors);
       return;
     case 'ResumeTask':
     case 'RetryTask':
@@ -193,10 +193,27 @@ function requireString(record: Record<string, unknown>, key: string, errors: str
   if (typeof record[key] !== 'string') errors.push(`${key} must be a string`);
 }
 
-function optionalString(record: Record<string, unknown>, key: string, errors: string[]): void {
-  if (record[key] !== undefined && typeof record[key] !== 'string') {
-    errors.push(`${key} must be a string when present`);
+function requireBoundedString(
+  record: Record<string, unknown>,
+  key: string,
+  minLength: number,
+  maxLength: number,
+  errors: string[],
+): void {
+  const value = record[key];
+  if (typeof value !== 'string' || value.length < minLength || value.length > maxLength) {
+    errors.push(`${key} must be a string from ${minLength} to ${maxLength} characters`);
   }
+}
+
+function optionalBoundedString(
+  record: Record<string, unknown>,
+  key: string,
+  minLength: number,
+  maxLength: number,
+  errors: string[],
+): void {
+  if (record[key] !== undefined) requireBoundedString(record, key, minLength, maxLength, errors);
 }
 
 function requireNamespacedName(
@@ -240,8 +257,17 @@ function optionalPercent(record: Record<string, unknown>, key: string, errors: s
 
 function requireReason(record: Record<string, unknown>, key: string, errors: string[]): void {
   const value = record[key];
-  if (!isRecord(value) || typeof value.code !== 'string' || typeof value.summary !== 'string') {
-    errors.push(`${key} must be a Reason-shaped object`);
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ['code', 'summary']) ||
+    typeof value.code !== 'string' ||
+    value.code.length > 128 ||
+    !NAMESPACED_NAME_PATTERN.test(value.code) ||
+    typeof value.summary !== 'string' ||
+    value.summary.length < 1 ||
+    value.summary.length > 1000
+  ) {
+    errors.push(`${key} must be a bounded canonical Reason`);
   }
 }
 
@@ -251,9 +277,55 @@ function requireEvidenceArray(
   errors: string[],
 ): void {
   const value = record[key];
-  if (!Array.isArray(value) || value.some((entry) => !isRecord(entry))) {
-    errors.push(`${key} must be an array of EvidenceRef-shaped objects`);
+  if (!Array.isArray(value) || value.length > 32 || value.some((entry) => !isEvidenceRef(entry))) {
+    errors.push(`${key} must be an array of at most 32 canonical EvidenceRef objects`);
   }
+}
+
+function isEvidenceRef(value: unknown): boolean {
+  if (!isRecord(value) || !hasOnlyKeys(value, ['uri', 'mediaType', 'sha256', 'sizeBytes']))
+    return false;
+  if (
+    typeof value.uri !== 'string' ||
+    value.uri.length > 2048 ||
+    /\s/u.test(value.uri) ||
+    hasControlCharacters(value.uri)
+  )
+    return false;
+  if (/%(?![0-9A-Fa-f]{2})/u.test(value.uri)) return false;
+  if (
+    value.mediaType !== undefined &&
+    (typeof value.mediaType !== 'string' ||
+      value.mediaType.length < 1 ||
+      value.mediaType.length > 255)
+  )
+    return false;
+  if (
+    value.sha256 !== undefined &&
+    (typeof value.sha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(value.sha256))
+  )
+    return false;
+  if (
+    value.sizeBytes !== undefined &&
+    (typeof value.sizeBytes !== 'number' ||
+      !Number.isInteger(value.sizeBytes) ||
+      value.sizeBytes < 0)
+  )
+    return false;
+  return true;
+}
+
+function hasControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
+function hasOnlyKeys(record: Record<string, unknown>, allowed: readonly string[]): boolean {
+  const allowedSet = new Set(allowed);
+  return Object.keys(record).every((key) => allowedSet.has(key));
 }
 
 function optionalResource(record: Record<string, unknown>, key: string, errors: string[]): void {
@@ -266,6 +338,7 @@ function optionalResource(record: Record<string, unknown>, key: string, errors: 
     return;
   }
   if (
+    !hasOnlyKeys(value, ['type', 'id']) ||
     typeof value.type !== 'string' ||
     value.type.length > 128 ||
     !NAMESPACED_NAME_PATTERN.test(value.type) ||
