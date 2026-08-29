@@ -111,7 +111,7 @@ export interface ProtocolSuccess<T = unknown> {
 
 export interface ProtocolFailure {
   protocolVersion: '0.1';
-  commandId: string;
+  commandId?: string;
   correlationId?: string;
   replayed: boolean;
   error: {
