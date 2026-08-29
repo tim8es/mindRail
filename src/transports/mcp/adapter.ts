@@ -83,7 +83,11 @@ const TOOL_BINDINGS: readonly ToolBinding[] = [
   command('mindrail_retry_task', 'RetryTask', 'Retry a failed task explicitly.'),
   command('mindrail_cancel_task', 'CancelTask', 'Cancel a nonterminal task.'),
   command('mindrail_cancel_goal', 'CancelGoal', 'Cancel a goal and its nonterminal work.'),
-  command('mindrail_request_permission', 'RequestPermission', 'Request scoped MindRail permission.'),
+  command(
+    'mindrail_request_permission',
+    'RequestPermission',
+    'Request scoped MindRail permission.',
+  ),
   command(
     'mindrail_record_permission_decision',
     'RecordPermissionDecision',
@@ -112,11 +116,7 @@ const TOOL_BINDINGS: readonly ToolBinding[] = [
   query('mindrail_get_agent', 'GetAgent', 'Read one agent.'),
   query('mindrail_get_session', 'GetSession', 'Read one session.'),
   query('mindrail_get_lease', 'GetLease', 'Read one lease.'),
-  query(
-    'mindrail_get_permission_request',
-    'GetPermissionRequest',
-    'Read one permission request.',
-  ),
+  query('mindrail_get_permission_request', 'GetPermissionRequest', 'Read one permission request.'),
   query(
     'mindrail_list_pending_human_permissions',
     'ListPendingHumanPermissions',
@@ -147,7 +147,9 @@ export function createMcpTransport(dependencies: McpTransportDependencies): McpT
       if (binding.kind === 'command') {
         const parsed = parseApplicationCommand(binding.operation, args);
         if (!parsed.ok) return commandFailureFromInput(args, parsed.message);
-        if (!(await isAuthorized(dependencies.authorizer, principal, claimForCommand(parsed.value)))) {
+        if (
+          !(await isAuthorized(dependencies.authorizer, principal, claimForCommand(parsed.value)))
+        ) {
           return commandFailure(
             parsed.value,
             'ACTOR_NOT_AUTHORIZED',
@@ -173,7 +175,11 @@ export function createMcpTransport(dependencies: McpTransportDependencies): McpT
       try {
         return await dependencies.dispatcher.dispatchQuery(parsed.value);
       } catch {
-        return queryFailure('INTERNAL_ERROR', 'Application dispatch failed.', parsed.value.correlationId);
+        return queryFailure(
+          'INTERNAL_ERROR',
+          'Application dispatch failed.',
+          parsed.value.correlationId,
+        );
       }
     },
   };
@@ -197,7 +203,9 @@ function toToolDefinition(binding: ToolBinding): McpToolDefinition {
       ? ['protocolVersion', 'commandId', 'workspaceId', 'actor']
       : ['protocolVersion', 'workspaceId', 'actor'];
   const shape =
-    binding.kind === 'command' ? COMMAND_SHAPES[binding.operation] : QUERY_SHAPES[binding.operation];
+    binding.kind === 'command'
+      ? COMMAND_SHAPES[binding.operation]
+      : QUERY_SHAPES[binding.operation];
   const propertyNames = [
     ...commonRequired,
     'correlationId',
@@ -273,10 +281,9 @@ function claimForQuery(queryValue: ApplicationQuery): PrincipalClaim {
   };
 }
 
-function hasSessionId(value: ApplicationCommand | ApplicationQuery): value is (
-  | ApplicationCommand
-  | ApplicationQuery
-) & { sessionId: string } {
+function hasSessionId(
+  value: ApplicationCommand | ApplicationQuery,
+): value is (ApplicationCommand | ApplicationQuery) & { sessionId: string } {
   return 'sessionId' in value && typeof value.sessionId === 'string';
 }
 
