@@ -12,7 +12,7 @@ function commandBody(overrides: Record<string, unknown> = {}) {
     actor: { type: 'human', id: 'human-1' },
     correlationId: 'corr-1',
     title: 'Transport goal',
-    objective: 'Prove the HTTP adapter is only a protocol mapping boundary.',
+    objective: 'Prove HTTP is only a protocol mapping boundary.',
     successCriteria: ['The dispatcher owns semantic execution.'],
     ...overrides,
   };
@@ -59,14 +59,13 @@ describe('HTTP v0.1 transport adapter', () => {
     const deps = createDependencies();
     deps.authorize.mockResolvedValue(false);
     const transport = createHttpTransport(deps);
+    const request = jsonRequest('/v0.1/commands/CreateGoal', commandBody());
 
-    const response = await transport.handle(
-      jsonRequest('/v0.1/commands/CreateGoal', commandBody()),
-      principal,
-    );
+    const response = await transport.handle(request, principal);
+    const body = await json(response);
 
     expect(response.status).toBe(403);
-    expect((await json(response)).error).toEqual(
+    expect(body.error).toEqual(
       expect.objectContaining({ code: 'ACTOR_NOT_AUTHORIZED' }),
     );
     expect(deps.dispatchCommand).not.toHaveBeenCalled();
@@ -76,17 +75,17 @@ describe('HTTP v0.1 transport adapter', () => {
   it('rejects malformed JSON before application dispatch', async () => {
     const deps = createDependencies();
     const transport = createHttpTransport(deps);
-    const response = await transport.handle(
-      new Request('https://mindrail.invalid/v0.1/commands/CreateGoal', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: '{not-json',
-      }),
-      principal,
-    );
+    const request = new Request('https://mindrail.invalid/v0.1/commands/CreateGoal', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{not-json',
+    });
+
+    const response = await transport.handle(request, principal);
+    const body = await json(response);
 
     expect(response.status).toBe(400);
-    expect((await json(response)).error).toEqual(expect.objectContaining({ code: 'INVALID_INPUT' }));
+    expect(body.error).toEqual(expect.objectContaining({ code: 'INVALID_INPUT' }));
     expect(deps.authorize).not.toHaveBeenCalled();
     expect(deps.dispatchCommand).not.toHaveBeenCalled();
   });
@@ -94,13 +93,13 @@ describe('HTTP v0.1 transport adapter', () => {
   it('rejects oversized bodies before application dispatch', async () => {
     const deps = createDependencies();
     const transport = createHttpTransport({ ...deps, maxBodyBytes: 32 });
-    const response = await transport.handle(
-      jsonRequest('/v0.1/commands/CreateGoal', commandBody()),
-      principal,
-    );
+    const request = jsonRequest('/v0.1/commands/CreateGoal', commandBody());
+
+    const response = await transport.handle(request, principal);
+    const body = await json(response);
 
     expect(response.status).toBe(413);
-    expect((await json(response)).error).toEqual(expect.objectContaining({ code: 'INVALID_INPUT' }));
+    expect(body.error).toEqual(expect.objectContaining({ code: 'INVALID_INPUT' }));
     expect(deps.authorize).not.toHaveBeenCalled();
     expect(deps.dispatchCommand).not.toHaveBeenCalled();
   });
@@ -108,20 +107,30 @@ describe('HTTP v0.1 transport adapter', () => {
   it('rejects unknown routes and discriminator mismatches deterministically', async () => {
     const deps = createDependencies();
     const transport = createHttpTransport(deps);
-
-    const unknown = await transport.handle(
-      jsonRequest('/v0.1/commands/DeleteEverything', commandBody()),
-      principal,
+    const unknownRequest = jsonRequest(
+      '/v0.1/commands/DeleteEverything',
+      commandBody(),
     );
+
+    const unknown = await transport.handle(unknownRequest, principal);
+    const unknownBody = await json(unknown);
+
     expect(unknown.status).toBe(404);
-    expect((await json(unknown)).error).toEqual(expect.objectContaining({ code: 'INVALID_INPUT' }));
-
-    const mismatch = await transport.handle(
-      jsonRequest('/v0.1/commands/CreateGoal', commandBody({ command: 'CancelGoal' })),
-      principal,
+    expect(unknownBody.error).toEqual(
+      expect.objectContaining({ code: 'INVALID_INPUT' }),
     );
+
+    const mismatchRequest = jsonRequest(
+      '/v0.1/commands/CreateGoal',
+      commandBody({ command: 'CancelGoal' }),
+    );
+    const mismatch = await transport.handle(mismatchRequest, principal);
+    const mismatchBody = await json(mismatch);
+
     expect(mismatch.status).toBe(400);
-    expect((await json(mismatch)).error).toEqual(expect.objectContaining({ code: 'INVALID_INPUT' }));
+    expect(mismatchBody.error).toEqual(
+      expect.objectContaining({ code: 'INVALID_INPUT' }),
+    );
     expect(deps.dispatchCommand).not.toHaveBeenCalled();
   });
 
@@ -131,41 +140,41 @@ describe('HTTP v0.1 transport adapter', () => {
     ['CONFLICT', 409],
     ['ACTOR_NOT_AUTHORIZED', 403],
     ['HUMAN_DECISION_REQUIRED', 409],
-  ] as const)('preserves canonical error code %s while mapping HTTP status %i', async (code, status) => {
+  ] as const)(
+    'preserves canonical error code %s while mapping HTTP status %i',
+    async (code, status) => {
+      const deps = createDependencies();
+      deps.dispatchCommand.mockResolvedValueOnce({
+        protocolVersion: '0.1',
+        commandId: 'cmd-1',
+        correlationId: 'corr-1',
+        replayed: false,
+        error: { code, message: 'bounded protocol failure', retryable: false },
+      });
+      const transport = createHttpTransport(deps);
+      const request = jsonRequest('/v0.1/commands/CreateGoal', commandBody());
+
+      const response = await transport.handle(request, principal);
+      const body = await json(response);
+
+      expect(response.status).toBe(status);
+      expect(body).toEqual({
+        protocolVersion: '0.1',
+        commandId: 'cmd-1',
+        correlationId: 'corr-1',
+        replayed: false,
+        error: { code, message: 'bounded protocol failure', retryable: false },
+      });
+    },
+  );
+
+  it('preserves success envelopes and tracing/idempotency fields', async () => {
     const deps = createDependencies();
-    deps.dispatchCommand.mockResolvedValueOnce({
-      protocolVersion: '0.1',
-      commandId: 'cmd-1',
-      correlationId: 'corr-1',
-      replayed: false,
-      error: { code, message: 'bounded protocol failure', retryable: false },
-    });
     const transport = createHttpTransport(deps);
+    const body = commandBody({ causationId: 'cause-1' });
+    const request = jsonRequest('/v0.1/commands/CreateGoal', body);
 
-    const response = await transport.handle(
-      jsonRequest('/v0.1/commands/CreateGoal', commandBody()),
-      principal,
-    );
-    const body = await json(response);
-
-    expect(response.status).toBe(status);
-    expect(body).toEqual({
-      protocolVersion: '0.1',
-      commandId: 'cmd-1',
-      correlationId: 'corr-1',
-      replayed: false,
-      error: { code, message: 'bounded protocol failure', retryable: false },
-    });
-  });
-
-  it('preserves success envelopes and tracing/idempotency fields without minting transport state', async () => {
-    const deps = createDependencies();
-    const transport = createHttpTransport(deps);
-
-    const response = await transport.handle(
-      jsonRequest('/v0.1/commands/CreateGoal', commandBody({ causationId: 'cause-1' })),
-      principal,
-    );
+    const response = await transport.handle(request, principal);
 
     expect(response.status).toBe(200);
     expect(await json(response)).toEqual({
@@ -186,18 +195,17 @@ describe('HTTP v0.1 transport adapter', () => {
     );
   });
 
-  it('maps bounded current queries through the same authorization and application seams', async () => {
+  it('maps bounded queries through the same authorization seam', async () => {
     const deps = createDependencies();
     const transport = createHttpTransport(deps);
-    const response = await transport.handle(
-      jsonRequest('/v0.1/queries/GetWorkspace', {
-        protocolVersion: '0.1',
-        workspaceId: 'ws-1',
-        actor: { type: 'human', id: 'human-1' },
-        correlationId: 'corr-1',
-      }),
-      principal,
-    );
+    const request = jsonRequest('/v0.1/queries/GetWorkspace', {
+      protocolVersion: '0.1',
+      workspaceId: 'ws-1',
+      actor: { type: 'human', id: 'human-1' },
+      correlationId: 'corr-1',
+    });
+
+    const response = await transport.handle(request, principal);
 
     expect(response.status).toBe(200);
     expect(await json(response)).toEqual({
@@ -210,15 +218,15 @@ describe('HTTP v0.1 transport adapter', () => {
     );
   });
 
-  it('never exposes an authorization exception, credential, or stack trace', async () => {
+  it('never exposes an authorization exception or credential', async () => {
     const deps = createDependencies();
     deps.authorize.mockRejectedValue(new Error('Bearer super-secret-credential'));
     const transport = createHttpTransport(deps);
+    const request = jsonRequest('/v0.1/commands/CreateGoal', commandBody());
 
-    const response = await transport.handle(
-      jsonRequest('/v0.1/commands/CreateGoal', commandBody()),
-      { subject: 'principal-secret-do-not-echo' },
-    );
+    const response = await transport.handle(request, {
+      subject: 'principal-secret-do-not-echo',
+    });
     const text = await response.text();
 
     expect(response.status).toBe(403);
