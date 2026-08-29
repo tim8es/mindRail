@@ -14,7 +14,7 @@ function createRuntime() {
     leaseDurationMs: 10 * 60_000,
     sessionTimeoutMs: 60_000,
     validateCanonicalDomainRecord: canonicalDomainValidator,
-  } as ConstructorParameters<typeof InMemoryControlPlane>[0] & { sessionTimeoutMs: number });
+  });
 
   return {
     runtime,

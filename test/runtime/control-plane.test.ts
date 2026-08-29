@@ -14,6 +14,7 @@ describe('in-memory control plane', () => {
       now: () => new Date(now),
       idFactory: (kind) => `${kind}-${++sequence}`,
       leaseDurationMs: 60_000,
+      sessionTimeoutMs: 10 * 60_000,
       validateCanonicalDomainRecord: canonicalDomainValidator,
     });
 
@@ -96,6 +97,7 @@ describe('in-memory control plane', () => {
       now: () => new Date(now),
       idFactory: (kind) => `${kind}-${++sequence}`,
       leaseDurationMs: 60_000,
+      sessionTimeoutMs: 10 * 60_000,
       validateCanonicalDomainRecord: canonicalDomainValidator,
     });
 
@@ -201,6 +203,7 @@ describe('in-memory control plane', () => {
       now: () => new Date(now),
       idFactory: (kind) => `${kind}-${++sequence}`,
       leaseDurationMs: 60_000,
+      sessionTimeoutMs: 10 * 60_000,
       validateCanonicalDomainRecord: canonicalDomainValidator,
     });
 

@@ -28,6 +28,7 @@ import {
   type RecordCheckpointCommand,
   type RetryTaskCommand,
 } from './protocol.ts';
+import { isProtocolEntityId, validateProtocolCommand } from './protocol-validation.ts';
 
 export interface InMemoryControlPlaneOptions {
   workspaceId: string;
@@ -35,6 +36,7 @@ export interface InMemoryControlPlaneOptions {
   now: () => Date;
   idFactory: (kind: string) => string;
   leaseDurationMs: number;
+  sessionTimeoutMs: number;
   validateCanonicalDomainRecord: CanonicalDomainValidator;
 }
 
@@ -163,6 +165,7 @@ export class InMemoryControlPlane {
   private readonly now: () => Date;
   private readonly idFactory: (kind: string) => string;
   private readonly leaseDurationMs: number;
+  private readonly sessionTimeoutMs: number;
   private readonly validateCanonicalDomainRecord: CanonicalDomainValidator;
 
   private readonly agents = new Map<string, Agent>();
@@ -179,10 +182,14 @@ export class InMemoryControlPlane {
     if (options.leaseDurationMs <= 0) {
       throw new RuntimeError('INVALID_INPUT', 'leaseDurationMs must be positive.');
     }
+    if (options.sessionTimeoutMs <= 0) {
+      throw new RuntimeError('INVALID_INPUT', 'sessionTimeoutMs must be positive.');
+    }
 
     this.now = options.now;
     this.idFactory = options.idFactory;
     this.leaseDurationMs = options.leaseDurationMs;
+    this.sessionTimeoutMs = options.sessionTimeoutMs;
     this.validateCanonicalDomainRecord = options.validateCanonicalDomainRecord;
     const timestamp = this.timestamp();
     const workspace: Workspace = {
@@ -207,7 +214,21 @@ export class InMemoryControlPlane {
   execute(command: CancelTaskCommand): ProtocolResponse<CancelTaskResult>;
   execute(command: CancelGoalCommand): ProtocolResponse<CancelGoalResult>;
   execute(command: ProtocolCommand): ProtocolResponse {
-    this.assertWorkspace(command.workspaceId);
+    const validation = validateProtocolCommand(command);
+    if (!validation.valid) {
+      const details = validation.errors?.slice(0, 3).join('; ') ?? 'invalid command envelope';
+      return this.protocolPreAdmissionFailure(command, 'INVALID_INPUT', details);
+    }
+
+    try {
+      this.assertWorkspace(command.workspaceId);
+    } catch (error) {
+      if (!(error instanceof RuntimeError)) {
+        throw error;
+      }
+      return this.protocolPreAdmissionFailure(command, error.code, error.message);
+    }
+
     const receiptKey = `${command.workspaceId}\u0000${command.commandId}`;
     const fingerprint = semanticFingerprint(command);
     const existing = this.commandReceipts.get(receiptKey);
@@ -247,7 +268,6 @@ export class InMemoryControlPlane {
     });
     return clone(response);
   }
-
   getWorkspace(workspaceId: string): Workspace {
     this.assertWorkspace(workspaceId);
     return clone(this.workspace);
@@ -624,7 +644,7 @@ export class InMemoryControlPlane {
     if (!lease || lease.workspaceId !== workspaceId) {
       throw new RuntimeError('NOT_FOUND', `Lease ${leaseId} was not found.`);
     }
-    this.materializeLeaseExpiry(lease);
+    this.materializeLeaseAuthority(lease);
     return clone(lease);
   }
 
@@ -761,6 +781,25 @@ export class InMemoryControlPlane {
     };
   }
 
+  private protocolPreAdmissionFailure(
+    command: ProtocolCommand,
+    code: RuntimeError['code'],
+    message: string,
+  ): ProtocolFailure {
+    return {
+      protocolVersion: '0.1',
+      ...(isProtocolEntityId(command.commandId) ? { commandId: command.commandId } : {}),
+      ...(isProtocolEntityId(command.correlationId)
+        ? { correlationId: command.correlationId }
+        : {}),
+      replayed: false,
+      error: {
+        code,
+        message,
+        retryable: false,
+      },
+    };
+  }
   private protocolFailure(
     command: ProtocolCommand,
     code: RuntimeError['code'],
@@ -896,7 +935,7 @@ export class InMemoryControlPlane {
       this.effectiveLeaseByTask.delete(taskId);
       return undefined;
     }
-    this.materializeLeaseExpiry(lease);
+    this.materializeLeaseAuthority(lease);
     if (lease.status !== 'active') {
       this.effectiveLeaseByTask.delete(taskId);
       return undefined;
@@ -904,6 +943,21 @@ export class InMemoryControlPlane {
     return lease;
   }
 
+  private materializeLeaseAuthority(lease: Lease): void {
+    this.materializeLeaseExpiry(lease);
+    if (lease.status !== 'active') {
+      return;
+    }
+    const session = this.sessions.get(lease.sessionId);
+    if (!session || session.workspaceId !== lease.workspaceId) {
+      this.revokeLease(lease);
+      return;
+    }
+    this.materializeSessionStaleness(session);
+    if (session.status !== 'active' && lease.status === 'active') {
+      this.revokeLease(lease);
+    }
+  }
   private materializeLeaseExpiry(lease: Lease): void {
     if (lease.status !== 'active' || Date.parse(lease.expiresAt) > this.now().getTime()) {
       return;
@@ -916,12 +970,43 @@ export class InMemoryControlPlane {
     }
   }
 
+  private materializeSessionStaleness(session: Session): void {
+    if (session.status !== 'active') {
+      return;
+    }
+    const staleAt = Date.parse(session.lastSeenAt) + this.sessionTimeoutMs;
+    if (this.now().getTime() < staleAt) {
+      return;
+    }
+    const timestamp = this.timestamp();
+    session.status = 'expired';
+    session.revision += 1;
+    session.updatedAt = timestamp;
+    for (const lease of this.leases.values()) {
+      if (lease.sessionId === session.id && lease.status === 'active') {
+        this.revokeLease(lease, timestamp);
+      }
+    }
+  }
+
+  private revokeLease(lease: Lease, timestamp = this.timestamp()): void {
+    if (lease.status !== 'active') {
+      return;
+    }
+    lease.status = 'revoked';
+    lease.revision += 1;
+    lease.updatedAt = timestamp;
+    if (this.effectiveLeaseByTask.get(lease.taskId) === lease.id) {
+      this.effectiveLeaseByTask.delete(lease.taskId);
+    }
+  }
   private requireActiveSession(workspaceId: string, sessionId: string): Session {
     this.assertWorkspace(workspaceId);
     const session = this.sessions.get(sessionId);
     if (!session || session.workspaceId !== workspaceId) {
       throw new RuntimeError('NOT_FOUND', `Session ${sessionId} was not found.`);
     }
+    this.materializeSessionStaleness(session);
     if (session.status !== 'active') {
       throw new RuntimeError('SESSION_NOT_ACTIVE', `Session ${sessionId} is not active.`);
     }
