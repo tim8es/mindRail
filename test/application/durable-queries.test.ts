@@ -26,7 +26,10 @@ function databasePath(): string {
   return join(mkdtempSync(join(tmpdir(), 'mindrail-durable-queries-')), 'runtime.sqlite');
 }
 
-function dispatcherFor(persistence: DurableRuntimePersistence, prefix: string): ApplicationDispatcher {
+function dispatcherFor(
+  persistence: DurableRuntimePersistence,
+  prefix: string,
+): ApplicationDispatcher {
   let sequence = 0;
   return createDurableApplicationDispatcher({
     persistence,
@@ -46,9 +49,7 @@ function successResult<T>(
   return response.result as T;
 }
 
-function queryResult<T>(
-  response: Awaited<ReturnType<ApplicationDispatcher['dispatchQuery']>>,
-): T {
+function queryResult<T>(response: Awaited<ReturnType<ApplicationDispatcher['dispatchQuery']>>): T {
   expect('error' in response).toBe(false);
   if ('error' in response) throw new Error(`Expected query success, got ${response.error.code}.`);
   return response.result as T;
@@ -262,32 +263,47 @@ describe('durable application queries', () => {
     opened = await openPersistence(path);
     const dispatcher = dispatcherFor(opened.persistence, 'fresh');
 
-    expect(queryResult<Workspace>(await dispatcher.dispatchQuery(baseQuery('GetWorkspace') as never))).toEqual(
-      workspace(),
-    );
+    expect(
+      queryResult<Workspace>(await dispatcher.dispatchQuery(baseQuery('GetWorkspace') as never)),
+    ).toEqual(workspace());
     expect(
       queryResult<Goal>(
-        await dispatcher.dispatchQuery({ ...baseQuery('GetGoal'), goalId: seeded.goal.id } as never),
+        await dispatcher.dispatchQuery({
+          ...baseQuery('GetGoal'),
+          goalId: seeded.goal.id,
+        } as never),
       ),
     ).toEqual(seeded.goal);
     expect(
       queryResult<Task>(
-        await dispatcher.dispatchQuery({ ...baseQuery('GetTask'), taskId: seeded.runningTask.id } as never),
+        await dispatcher.dispatchQuery({
+          ...baseQuery('GetTask'),
+          taskId: seeded.runningTask.id,
+        } as never),
       ),
     ).toEqual(seeded.runningTask);
     expect(
       queryResult<Lease>(
-        await dispatcher.dispatchQuery({ ...baseQuery('GetLease'), leaseId: seeded.lease.id } as never),
+        await dispatcher.dispatchQuery({
+          ...baseQuery('GetLease'),
+          leaseId: seeded.lease.id,
+        } as never),
       ),
     ).toEqual(seeded.lease);
     expect(
       queryResult<Agent>(
-        await dispatcher.dispatchQuery({ ...baseQuery('GetAgent'), agentId: seeded.registered.id } as never),
+        await dispatcher.dispatchQuery({
+          ...baseQuery('GetAgent'),
+          agentId: seeded.registered.id,
+        } as never),
       ),
     ).toEqual(seeded.registered);
     expect(
       queryResult<Session>(
-        await dispatcher.dispatchQuery({ ...baseQuery('GetSession'), sessionId: seeded.session.id } as never),
+        await dispatcher.dispatchQuery({
+          ...baseQuery('GetSession'),
+          sessionId: seeded.session.id,
+        } as never),
       ),
     ).toEqual(seeded.session);
     expect(
@@ -380,7 +396,9 @@ describe('durable application queries', () => {
         cursor: firstPending.nextCursor,
       } as never),
     );
-    expect(secondPending.items.map((item) => item.request.id)).toEqual([seeded.pendingTwo.request.id]);
+    expect(secondPending.items.map((item) => item.request.id)).toEqual([
+      seeded.pendingTwo.request.id,
+    ]);
     expect(secondPending.nextCursor).toBeUndefined();
 
     const claimable = queryResult<{ items: Task[]; nextCursor?: string }>(
