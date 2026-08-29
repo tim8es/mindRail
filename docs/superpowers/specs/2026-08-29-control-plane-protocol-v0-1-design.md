@@ -128,27 +128,27 @@ error:
 
 ## 6. Command table
 
-| Command | Required intent | Primary result |
-| --- | --- | --- |
-| `RegisterAgent` | display name, capabilities | Agent |
-| `StartSession` | agentId | Session |
-| `HeartbeatSession` | sessionId, expected Session revision | Session |
-| `EndSession` | sessionId, expected Session revision | Session + revoked Leases |
-| `CreateGoal` | title, objective, success criteria | Goal |
-| `CreateTask` | goalId, title, objective, acceptance criteria, capabilities, dependencies | Task |
-| `ClaimTask` | taskId, sessionId, observed Task revision | Task + Lease |
-| `RenewLease` | leaseId, sessionId, expected Lease revision, fence | Lease |
-| `ReleaseLease` | leaseId, sessionId, expected Lease revision, fence | Lease |
-| `RecordCheckpoint` | task/session/lease/fence, progress or handoff evidence | Checkpoint |
-| `CompleteTask` | execution refs, expected Task revision, result/evidence | Task + Checkpoint + released Lease |
-| `FailTask` | execution refs, expected Task revision, reason/result | Task + Checkpoint + released Lease |
-| `BlockTask` | execution refs, expected Task revision, reason/evidence | Task + Checkpoint + released Lease |
-| `ResumeTask` | taskId, expected Task revision | Task |
-| `RetryTask` | taskId, expected Task revision | Task |
-| `CancelTask` | taskId, expected Task revision, reason | Task + revoked Lease? |
-| `CancelGoal` | goalId, expected Goal revision, reason | Goal + affected Task/Lease summary |
-| `RequestPermission` | execution refs, permission, justification, resource? | PermissionRequest + initial PermissionDecision |
-| `RecordPermissionDecision` | requestId, expected predecessor, ALLOW/DENY, reasonCode | PermissionDecision |
+| Command                    | Required intent                                                           | Primary result                                 |
+| -------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------- |
+| `RegisterAgent`            | display name, capabilities                                                | Agent                                          |
+| `StartSession`             | agentId                                                                   | Session                                        |
+| `HeartbeatSession`         | sessionId, expected Session revision                                      | Session                                        |
+| `EndSession`               | sessionId, expected Session revision                                      | Session + revoked Leases                       |
+| `CreateGoal`               | title, objective, success criteria                                        | Goal                                           |
+| `CreateTask`               | goalId, title, objective, acceptance criteria, capabilities, dependencies | Task                                           |
+| `ClaimTask`                | taskId, sessionId, observed Task revision                                 | Task + Lease                                   |
+| `RenewLease`               | leaseId, sessionId, expected Lease revision, fence                        | Lease                                          |
+| `ReleaseLease`             | leaseId, sessionId, expected Lease revision, fence                        | Lease                                          |
+| `RecordCheckpoint`         | task/session/lease/fence, progress or handoff evidence                    | Checkpoint                                     |
+| `CompleteTask`             | execution refs, expected Task revision, result/evidence                   | Task + Checkpoint + released Lease             |
+| `FailTask`                 | execution refs, expected Task revision, reason/result                     | Task + Checkpoint + released Lease             |
+| `BlockTask`                | execution refs, expected Task revision, reason/evidence                   | Task + Checkpoint + released Lease             |
+| `ResumeTask`               | taskId, expected Task revision                                            | Task                                           |
+| `RetryTask`                | taskId, expected Task revision                                            | Task                                           |
+| `CancelTask`               | taskId, expected Task revision, reason                                    | Task + revoked Lease?                          |
+| `CancelGoal`               | goalId, expected Goal revision, reason                                    | Goal + affected Task/Lease summary             |
+| `RequestPermission`        | execution refs, permission, justification, resource?                      | PermissionRequest + initial PermissionDecision |
+| `RecordPermissionDecision` | requestId, expected predecessor, ALLOW/DENY, reasonCode                   | PermissionDecision                             |
 
 No `UpdateEntity`, `PatchTask`, or arbitrary-action command exists.
 
@@ -210,43 +210,43 @@ Authenticated human follow-up only. Runtime derives decision basis/actor/sequenc
 
 ## 8. Query table
 
-| Query | Purpose |
-| --- | --- |
-| `GetWorkspace` | bootstrap scope |
-| `GetGoal` / `ListGoals` | objective/current Goal state |
-| `GetTask` / `ListGoalTasks` | Task state and decomposition |
-| `ListClaimableTasks` | advisory work discovery |
-| `GetTaskExecutionView` | Task + effective Lease + latest checkpoint projection |
-| `ListTaskCheckpoints` | durable handoff/evidence history |
-| `GetAgent` | Agent capabilities/status |
-| `GetSession` | Session liveness/state |
-| `GetLease` | Lease state |
-| `GetPermissionRequest` | permission request state |
-| `ListPendingHumanPermissions` | approval queue |
-| `ListPermissionDecisions` | immutable decision chain |
+| Query                         | Purpose                                               |
+| ----------------------------- | ----------------------------------------------------- |
+| `GetWorkspace`                | bootstrap scope                                       |
+| `GetGoal` / `ListGoals`       | objective/current Goal state                          |
+| `GetTask` / `ListGoalTasks`   | Task state and decomposition                          |
+| `ListClaimableTasks`          | advisory work discovery                               |
+| `GetTaskExecutionView`        | Task + effective Lease + latest checkpoint projection |
+| `ListTaskCheckpoints`         | durable handoff/evidence history                      |
+| `GetAgent`                    | Agent capabilities/status                             |
+| `GetSession`                  | Session liveness/state                                |
+| `GetLease`                    | Lease state                                           |
+| `GetPermissionRequest`        | permission request state                              |
+| `ListPendingHumanPermissions` | approval queue                                        |
+| `ListPermissionDecisions`     | immutable decision chain                              |
 
 Lists use `limit` 1..100 and opaque cursor. No arbitrary filter language.
 
 ## 9. Error codes
 
-| Code | Client behavior |
-| --- | --- |
-| `INVALID_INPUT` | fix request |
-| `NOT_FOUND` | refresh/stop |
-| `CONFLICT` | refresh state |
-| `REVISION_MISMATCH` | re-read and re-evaluate intent |
-| `LEASE_NOT_ACTIVE` | reacquire/stop stale execution |
-| `LEASE_EXPIRED` | claim new Lease |
-| `STALE_FENCING_TOKEN` | stop old executor immediately |
-| `INVALID_STATE_TRANSITION` | use legal command/current state |
-| `IDEMPOTENCY_CONFLICT` | client bug/new commandId for new intent |
-| `SESSION_NOT_ACTIVE` | start/recover Session |
-| `CAPABILITY_MISMATCH` | use another Agent |
-| `DEPENDENCY_UNSATISFIED` | wait/resolve dependencies |
-| `ACTOR_NOT_AUTHORIZED` | do not retry unchanged |
-| `PERMISSION_DENIED` | stop unauthorized action |
-| `HUMAN_DECISION_REQUIRED` | wait/query human decision |
-| `POLICY_UNAVAILABLE` | safe exact retry when infrastructure recovers |
+| Code                       | Client behavior                               |
+| -------------------------- | --------------------------------------------- |
+| `INVALID_INPUT`            | fix request                                   |
+| `NOT_FOUND`                | refresh/stop                                  |
+| `CONFLICT`                 | refresh state                                 |
+| `REVISION_MISMATCH`        | re-read and re-evaluate intent                |
+| `LEASE_NOT_ACTIVE`         | reacquire/stop stale execution                |
+| `LEASE_EXPIRED`            | claim new Lease                               |
+| `STALE_FENCING_TOKEN`      | stop old executor immediately                 |
+| `INVALID_STATE_TRANSITION` | use legal command/current state               |
+| `IDEMPOTENCY_CONFLICT`     | client bug/new commandId for new intent       |
+| `SESSION_NOT_ACTIVE`       | start/recover Session                         |
+| `CAPABILITY_MISMATCH`      | use another Agent                             |
+| `DEPENDENCY_UNSATISFIED`   | wait/resolve dependencies                     |
+| `ACTOR_NOT_AUTHORIZED`     | do not retry unchanged                        |
+| `PERMISSION_DENIED`        | stop unauthorized action                      |
+| `HUMAN_DECISION_REQUIRED`  | wait/query human decision                     |
+| `POLICY_UNAVAILABLE`       | safe exact retry when infrastructure recovers |
 
 HTTP status codes may map coarsely, but protocol error code is canonical.
 

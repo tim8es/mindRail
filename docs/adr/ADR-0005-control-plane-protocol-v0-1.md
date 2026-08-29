@@ -118,27 +118,27 @@ Clients branch on `error.code`, not message text or HTTP status.
 
 Protocol v0.1 exposes explicit commands only.
 
-| Command | Purpose |
-| --- | --- |
-| `RegisterAgent` | create logical Agent/capabilities |
-| `StartSession` | start one Agent execution lifetime |
-| `HeartbeatSession` | refresh Session liveness |
-| `EndSession` | end Session and revoke its effective Leases |
-| `CreateGoal` | create active Goal |
-| `CreateTask` | add Task under active Goal |
-| `ClaimTask` | obtain/recover Task execution Lease |
-| `RenewLease` | extend current Lease |
-| `ReleaseLease` | voluntarily surrender Lease |
-| `RecordCheckpoint` | append progress/handoff evidence |
-| `CompleteTask` | append result and succeed Task |
-| `FailTask` | append result and fail Task |
-| `BlockTask` | append blocked checkpoint and pause Task |
-| `ResumeTask` | explicitly resume blocked Task |
-| `RetryTask` | explicitly reopen failed Task to `ready` |
-| `CancelTask` | stop one nonterminal Task |
-| `CancelGoal` | stop Goal, cancel nonterminal Tasks, revoke Leases |
-| `RequestPermission` | create request and deterministic initial decision |
-| `RecordPermissionDecision` | append authenticated human follow-up decision |
+| Command                    | Purpose                                            |
+| -------------------------- | -------------------------------------------------- |
+| `RegisterAgent`            | create logical Agent/capabilities                  |
+| `StartSession`             | start one Agent execution lifetime                 |
+| `HeartbeatSession`         | refresh Session liveness                           |
+| `EndSession`               | end Session and revoke its effective Leases        |
+| `CreateGoal`               | create active Goal                                 |
+| `CreateTask`               | add Task under active Goal                         |
+| `ClaimTask`                | obtain/recover Task execution Lease                |
+| `RenewLease`               | extend current Lease                               |
+| `ReleaseLease`             | voluntarily surrender Lease                        |
+| `RecordCheckpoint`         | append progress/handoff evidence                   |
+| `CompleteTask`             | append result and succeed Task                     |
+| `FailTask`                 | append result and fail Task                        |
+| `BlockTask`                | append blocked checkpoint and pause Task           |
+| `ResumeTask`               | explicitly resume blocked Task                     |
+| `RetryTask`                | explicitly reopen failed Task to `ready`           |
+| `CancelTask`               | stop one nonterminal Task                          |
+| `CancelGoal`               | stop Goal, cancel nonterminal Tasks, revoke Leases |
+| `RequestPermission`        | create request and deterministic initial decision  |
+| `RecordPermissionDecision` | append authenticated human follow-up decision      |
 
 `FailGoal` is not public in protocol v0.1. ADR-0004 defines its runtime semantics so it can be added later without changing the domain model.
 
@@ -294,24 +294,24 @@ Lists use bounded `limit` and opaque cursor. No arbitrary filter language is par
 
 At minimum:
 
-| Code | Meaning |
-| --- | --- |
-| `INVALID_INPUT` | structural/domain validation failed |
-| `NOT_FOUND` | requested record unavailable in Workspace |
-| `CONFLICT` | current authoritative state conflicts with request |
-| `REVISION_MISMATCH` | expected revision is stale |
-| `LEASE_NOT_ACTIVE` | referenced Lease is not current/effective |
-| `LEASE_EXPIRED` | Lease authority expired |
-| `STALE_FENCING_TOKEN` | presented fence is not current authority |
-| `INVALID_STATE_TRANSITION` | command illegal from current state |
-| `IDEMPOTENCY_CONFLICT` | commandId reused for different intent |
-| `SESSION_NOT_ACTIVE` | Session ended/expired/stale |
-| `CAPABILITY_MISMATCH` | Agent lacks Task requirements |
-| `DEPENDENCY_UNSATISFIED` | Task cannot become executable yet |
-| `ACTOR_NOT_AUTHORIZED` | authenticated principal lacks authority |
-| `PERMISSION_DENIED` | authoritative outcome is DENY |
-| `HUMAN_DECISION_REQUIRED` | no grant exists until human resolves |
-| `POLICY_UNAVAILABLE` | deterministic policy evaluation unavailable |
+| Code                       | Meaning                                            |
+| -------------------------- | -------------------------------------------------- |
+| `INVALID_INPUT`            | structural/domain validation failed                |
+| `NOT_FOUND`                | requested record unavailable in Workspace          |
+| `CONFLICT`                 | current authoritative state conflicts with request |
+| `REVISION_MISMATCH`        | expected revision is stale                         |
+| `LEASE_NOT_ACTIVE`         | referenced Lease is not current/effective          |
+| `LEASE_EXPIRED`            | Lease authority expired                            |
+| `STALE_FENCING_TOKEN`      | presented fence is not current authority           |
+| `INVALID_STATE_TRANSITION` | command illegal from current state                 |
+| `IDEMPOTENCY_CONFLICT`     | commandId reused for different intent              |
+| `SESSION_NOT_ACTIVE`       | Session ended/expired/stale                        |
+| `CAPABILITY_MISMATCH`      | Agent lacks Task requirements                      |
+| `DEPENDENCY_UNSATISFIED`   | Task cannot become executable yet                  |
+| `ACTOR_NOT_AUTHORIZED`     | authenticated principal lacks authority            |
+| `PERMISSION_DENIED`        | authoritative outcome is DENY                      |
+| `HUMAN_DECISION_REQUIRED`  | no grant exists until human resolves               |
+| `POLICY_UNAVAILABLE`       | deterministic policy evaluation unavailable        |
 
 Errors include typed details where useful but never arbitrary JSON bags.
 
