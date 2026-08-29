@@ -80,10 +80,15 @@
         "required": ["sequence"]
       },
       "then": {
-        "not": { "required": ["supersedesDecisionId"] }
+        "properties": { "supersedesDecisionId": false }
       },
       "else": {
-        "required": ["supersedesDecisionId"]
+        "required": ["supersedesDecisionId"],
+        "properties": {
+          "supersedesDecisionId": {
+            "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId"
+          }
+        }
       }
     }
   ]
