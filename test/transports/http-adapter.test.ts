@@ -65,9 +65,7 @@ describe('HTTP v0.1 transport adapter', () => {
     const body = await json(response);
 
     expect(response.status).toBe(403);
-    expect(body.error).toEqual(
-      expect.objectContaining({ code: 'ACTOR_NOT_AUTHORIZED' }),
-    );
+    expect(body.error).toEqual(expect.objectContaining({ code: 'ACTOR_NOT_AUTHORIZED' }));
     expect(deps.dispatchCommand).not.toHaveBeenCalled();
     expect(deps.dispatchQuery).not.toHaveBeenCalled();
   });
@@ -107,18 +105,13 @@ describe('HTTP v0.1 transport adapter', () => {
   it('rejects unknown routes and discriminator mismatches deterministically', async () => {
     const deps = createDependencies();
     const transport = createHttpTransport(deps);
-    const unknownRequest = jsonRequest(
-      '/v0.1/commands/DeleteEverything',
-      commandBody(),
-    );
+    const unknownRequest = jsonRequest('/v0.1/commands/DeleteEverything', commandBody());
 
     const unknown = await transport.handle(unknownRequest, principal);
     const unknownBody = await json(unknown);
 
     expect(unknown.status).toBe(404);
-    expect(unknownBody.error).toEqual(
-      expect.objectContaining({ code: 'INVALID_INPUT' }),
-    );
+    expect(unknownBody.error).toEqual(expect.objectContaining({ code: 'INVALID_INPUT' }));
 
     const mismatchRequest = jsonRequest(
       '/v0.1/commands/CreateGoal',
@@ -128,9 +121,7 @@ describe('HTTP v0.1 transport adapter', () => {
     const mismatchBody = await json(mismatch);
 
     expect(mismatch.status).toBe(400);
-    expect(mismatchBody.error).toEqual(
-      expect.objectContaining({ code: 'INVALID_INPUT' }),
-    );
+    expect(mismatchBody.error).toEqual(expect.objectContaining({ code: 'INVALID_INPUT' }));
     expect(deps.dispatchCommand).not.toHaveBeenCalled();
   });
 
