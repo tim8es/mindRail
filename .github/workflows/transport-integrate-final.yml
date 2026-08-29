@@ -29,54 +29,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Materialize transport candidate
-        run: |
-          git fetch origin feature/transports-v0-1
-          git checkout origin/feature/transports-v0-1 -- src/application src/transports test/transports
-      - name: Reconcile with current protocol
+        run: git checkout origin/feature/transports-v0-1 -- src/application src/transports test/transports
+      - name: Reconcile current protocol
         run: node scripts/tmp-transport-integrate.mjs
-      - name: Remove obsolete validator helpers
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          app = Path('src/application/validation.ts')
-          text = app.read_text()
-          text, count = re.subn(r"function isReason\([\s\S]*?\nfunction isPositiveInteger", "function isPositiveInteger", text, count=1)
-          if count != 1:
-              raise RuntimeError('failed to remove obsolete application validator helpers')
-          app.write_text(text)
-
-          protocol = Path('src/runtime/protocol-validation.ts')
-          text = protocol.read_text()
-          text, count = re.subn(r"\nfunction optionalString\([\s\S]*?\n}\n\nfunction requireBoundedString", "\nfunction requireBoundedString", text, count=1)
-          if count != 1:
-              raise RuntimeError('failed to remove obsolete optionalString helper')
-          old = "if (typeof value.uri !== 'string' || value.uri.length > 2048 || /[\\s\\u0000-\\u001f]/u.test(value.uri)) return false;"
-          new = "if (typeof value.uri !== 'string' || value.uri.length > 2048 || /\\s/u.test(value.uri) || hasControlCharacters(value.uri)) return false;"
-          if old not in text:
-              raise RuntimeError('failed to find URI control-character validation')
-          text = text.replace(old, new, 1)
-          anchor = "function hasOnlyKeys(record: Record<string, unknown>, allowed: readonly string[]): boolean {"
-          helper = """function hasControlCharacters(value: string): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    if (code < 0x20 || code === 0x7f) return true;
-  }
-  return false;
-}
-
-"""
-          if anchor not in text:
-              raise RuntimeError('failed to find helper insertion point')
-          protocol.write_text(text.replace(anchor, helper + anchor, 1))
-          PY
+      - name: Remove obsolete helpers
+        run: node scripts/tmp-transport-lint-cleanup.mjs
       - name: Format production and regression files
         run: pnpm exec prettier --write src/application src/transports src/runtime/protocol-validation.ts test/transports test/runtime/protocol-admission-bounds-review.test.ts
       - name: Focused tests
         run: pnpm vitest run test/transports test/runtime/protocol-admission-bounds-review.test.ts test/runtime/control-plane-runtime-surface.test.ts test/runtime/permission-engine.test.ts
       - name: Remove temporary harness
-        run: git rm -f .github/workflows/transport-integrate-final.yml .github/workflows/transport-integrate-once.yml .github/workflows/transport-review-red.yml .github/workflows/protocol-admission-red.yml scripts/tmp-transport-integrate.mjs
+        run: git rm -f .github/workflows/transport-integrate-final.yml .github/workflows/transport-integrate-once.yml .github/workflows/transport-review-red.yml .github/workflows/protocol-admission-red.yml scripts/tmp-transport-integrate.mjs scripts/tmp-transport-lint-cleanup.mjs
       - name: Full quality on final tree
         run: pnpm check
       - name: Coverage on final tree
