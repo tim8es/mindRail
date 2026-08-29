@@ -34,7 +34,10 @@ function databasePath(): string {
   return join(mkdtempSync(join(tmpdir(), 'mindrail-durable-dispatcher-')), 'runtime.sqlite');
 }
 
-function factoryOptions(persistence: DurableRuntimePersistence, prefix: string): DurableDispatcherOptions {
+function factoryOptions(
+  persistence: DurableRuntimePersistence,
+  prefix: string,
+): DurableDispatcherOptions {
   let sequence = 0;
   return {
     persistence,
@@ -59,7 +62,9 @@ function registerAgentCommand(correlationId = 'corr-register', displayName = 'Du
   };
 }
 
-function successResult<T>(response: Awaited<ReturnType<ApplicationDispatcher['dispatchCommand']>>): T {
+function successResult<T>(
+  response: Awaited<ReturnType<ApplicationDispatcher['dispatchCommand']>>,
+): T {
   expect('error' in response).toBe(false);
   if ('error' in response) throw new Error(`Expected success, got ${response.error.code}.`);
   return response.result as T;
