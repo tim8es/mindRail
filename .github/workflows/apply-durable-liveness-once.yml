@@ -1,0 +1,43 @@
+name: Apply durable liveness GREEN once
+
+on:
+  push:
+    branches:
+      - feature/durable-session-lease-liveness
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feature/durable-session-lease-liveness
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - run: npm install --global "$(node -p "require('./package.json').packageManager")"
+      - run: pnpm install --frozen-lockfile
+      - name: Apply bounded implementation
+        run: python scripts/tmp/apply-durable-liveness.py
+      - name: Format changed files
+        run: pnpm exec prettier --write src/persistence/ports.ts src/persistence/cloudflare/d1-runtime-persistence.ts src/application/durable-dispatcher.ts
+      - name: Focused GREEN
+        run: pnpm exec vitest run test/e2e/durable-session-lease-liveness-e2e.test.ts
+      - name: Full quality
+        run: pnpm check
+      - name: Coverage
+        run: pnpm test:coverage
+      - name: Remove temporary harness
+        run: git rm .github/workflows/apply-durable-liveness-once.yml scripts/tmp/apply-durable-liveness.py
+      - name: Commit and push GREEN tree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/persistence/ports.ts src/persistence/cloudflare/d1-runtime-persistence.ts src/application/durable-dispatcher.ts test/e2e/durable-session-lease-liveness-e2e.test.ts
+          git commit -m "feat: add durable session lease liveness"
+          git push origin HEAD:feature/durable-session-lease-liveness
