@@ -2,7 +2,7 @@
 
 - **Status:** Proposed
 - **Date:** 2026-08-29
-- **Depends on:** ADR-0001, proposed ADR-0003
+- **Depends on:** ADR-0001, ADR-0003
 
 ## Context
 
@@ -190,4 +190,4 @@ The detailed specification defines compatibility rules. In summary:
 - domain-schema versioning remains governed separately by ADR-0003;
 - HTTP/MCP mapping changes that preserve protocol semantics are adapter changes, not protocol-version changes.
 
-ADR-0004 must remain **Proposed** while its dependency ADR-0003 is Proposed. It may be accepted only after the domain-contract decision it relies on is accepted and any review findings are reconciled.
+ADR-0004 remains **Proposed** while protocol semantics are under review. With ADR-0003 now Accepted, there is no known domain-contract blocker to accepting this ADR after review.

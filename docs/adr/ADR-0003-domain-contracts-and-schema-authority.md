@@ -1,6 +1,6 @@
 # ADR-0003: Domain contracts and schema authority
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-29
 
 ## Context
