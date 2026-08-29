@@ -102,10 +102,18 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     });
   }
 
-  async createAgent(input: { agent: Agent }): Promise<void> {
+  async createAgent(input: {
+    agent: Agent;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Agent>> {
     const { agent } = input;
     this.assertCanonical('Agent', agent);
-    await this.coordinator.runSerialized(agent.workspaceId, async () => {
+    this.assertRelatedAudit(agent.workspaceId, input.auditEvent);
+    this.assertReceipt(agent.workspaceId, input.receipt);
+    return this.coordinator.runSerialized(agent.workspaceId, async () => {
+      const replay = await this.resolveReceipt(input.receipt);
+      if (replay) return replay;
       await this.requireWorkspace(agent.workspaceId);
       const statements: D1PreparedStatementLike[] = [
         this.database
@@ -132,20 +140,31 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
             .bind(agent.workspaceId, agent.id, capability),
         ),
       ];
+      this.pushAuditStatement(statements, input.auditEvent);
+      this.pushReceiptStatement(statements, input.receipt);
       await this.batch(statements, 'create Agent');
+      return { kind: 'committed', value: clone(agent) };
     });
   }
 
-  async createSession(input: { session: Session }): Promise<void> {
+  async createSession(input: {
+    session: Session;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Session>> {
     const { session } = input;
     this.assertCanonical('Session', session);
-    await this.coordinator.runSerialized(session.workspaceId, async () => {
+    this.assertRelatedAudit(session.workspaceId, input.auditEvent);
+    this.assertReceipt(session.workspaceId, input.receipt);
+    return this.coordinator.runSerialized(session.workspaceId, async () => {
+      const replay = await this.resolveReceipt(input.receipt);
+      if (replay) return replay;
       await this.requireWorkspace(session.workspaceId);
       const agent = await this.getAgent(session.workspaceId, session.agentId);
       if (!agent) {
         throw new PersistenceError('NOT_FOUND', `Agent ${session.agentId} was not found.`);
       }
-      await this.run(
+      const statements: D1PreparedStatementLike[] = [
         this.database
           .prepare(
             `INSERT INTO sessions(
@@ -164,8 +183,11 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
             timestampMs(session.lastSeenAt, 'Session.lastSeenAt'),
             serializeJson(session, 'Session'),
           ),
-        'create Session',
-      );
+      ];
+      this.pushAuditStatement(statements, input.auditEvent);
+      this.pushReceiptStatement(statements, input.receipt);
+      await this.batch(statements, 'create Session');
+      return { kind: 'committed', value: clone(session) };
     });
   }
 
@@ -534,14 +556,26 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     });
   }
 
-  async appendCheckpoint(input: { checkpoint: Checkpoint; now: string }): Promise<Checkpoint> {
+  async appendCheckpoint(input: {
+    checkpoint: Checkpoint;
+    now: string;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Checkpoint>> {
     const { checkpoint } = input;
     this.assertCanonical('Checkpoint', checkpoint);
+    this.assertRelatedAudit(checkpoint.workspaceId, input.auditEvent);
+    this.assertReceipt(checkpoint.workspaceId, input.receipt);
     const nowMs = timestampMs(input.now, 'checkpoint now');
     return this.coordinator.runSerialized(checkpoint.workspaceId, async () => {
+      const replay = await this.resolveReceipt(input.receipt);
+      if (replay) return replay;
       await this.assertCheckpointAuthority(checkpoint, nowMs);
-      await this.run(this.insertCheckpointStatement(checkpoint), 'append Checkpoint');
-      return clone(checkpoint);
+      const statements: D1PreparedStatementLike[] = [this.insertCheckpointStatement(checkpoint)];
+      this.pushAuditStatement(statements, input.auditEvent);
+      this.pushReceiptStatement(statements, input.receipt);
+      await this.batch(statements, 'append Checkpoint');
+      return { kind: 'committed', value: clone(checkpoint) };
     });
   }
 
@@ -729,9 +763,15 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
   async appendPermissionDecision(input: {
     decision: PermissionDecision;
     expectedPreviousDecisionId: string;
-  }): Promise<PermissionDecision> {
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<PermissionDecision>> {
     this.assertCanonical('PermissionDecision', input.decision);
+    this.assertRelatedAudit(input.decision.workspaceId, input.auditEvent);
+    this.assertReceipt(input.decision.workspaceId, input.receipt);
     return this.coordinator.runSerialized(input.decision.workspaceId, async () => {
+      const replay = await this.resolveReceipt(input.receipt);
+      if (replay) return replay;
       const head = await this.first<PermissionHeadRow>(
         `SELECT latest_decision_id, latest_sequence, latest_outcome
          FROM permission_heads
@@ -761,29 +801,29 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
         );
       }
 
-      await this.batch(
-        [
-          this.insertPermissionDecisionStatement(input.decision),
-          this.database
-            .prepare(
-              `UPDATE permission_heads
-               SET latest_decision_id = ?, latest_sequence = ?, latest_outcome = ?
-               WHERE workspace_id = ? AND request_id = ?
-                 AND latest_decision_id = ? AND latest_sequence = ?`,
-            )
-            .bind(
-              input.decision.id,
-              input.decision.sequence,
-              input.decision.outcome,
-              input.decision.workspaceId,
-              input.decision.requestId,
-              head.latest_decision_id,
-              head.latest_sequence,
-            ),
-        ],
-        'append PermissionDecision',
-      );
-      return clone(input.decision);
+      const statements: D1PreparedStatementLike[] = [
+        this.insertPermissionDecisionStatement(input.decision),
+        this.database
+          .prepare(
+            `UPDATE permission_heads
+             SET latest_decision_id = ?, latest_sequence = ?, latest_outcome = ?
+             WHERE workspace_id = ? AND request_id = ?
+               AND latest_decision_id = ? AND latest_sequence = ?`,
+          )
+          .bind(
+            input.decision.id,
+            input.decision.sequence,
+            input.decision.outcome,
+            input.decision.workspaceId,
+            input.decision.requestId,
+            head.latest_decision_id,
+            head.latest_sequence,
+          ),
+      ];
+      this.pushAuditStatement(statements, input.auditEvent);
+      this.pushReceiptStatement(statements, input.receipt);
+      await this.batch(statements, 'append PermissionDecision');
+      return { kind: 'committed', value: clone(input.decision) };
     });
   }
 

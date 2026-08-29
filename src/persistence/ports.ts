@@ -135,8 +135,16 @@ export interface CompleteTaskCommitValue {
 
 export interface DurableRuntimePersistence {
   bootstrapWorkspace(workspace: Workspace): Promise<void>;
-  createAgent(input: { agent: Agent }): Promise<void>;
-  createSession(input: { session: Session }): Promise<void>;
+  createAgent(input: {
+    agent: Agent;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Agent>>;
+  createSession(input: {
+    session: Session;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Session>>;
   createGoal(input: {
     goal: Goal;
     receipt?: CommandReceiptInput;
@@ -150,7 +158,12 @@ export interface DurableRuntimePersistence {
   claimTask(input: ClaimTaskCommitInput): Promise<MutationCommitResult<ClaimTaskCommitValue>>;
   updateTask(input: { task: Task; expectedRevision: number }): Promise<Task>;
   updateGoal(input: { goal: Goal; expectedRevision: number }): Promise<Goal>;
-  appendCheckpoint(input: { checkpoint: Checkpoint; now: string }): Promise<Checkpoint>;
+  appendCheckpoint(input: {
+    checkpoint: Checkpoint;
+    now: string;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Checkpoint>>;
   completeTask(
     input: CompleteTaskCommitInput,
   ): Promise<MutationCommitResult<CompleteTaskCommitValue>>;
@@ -164,7 +177,9 @@ export interface DurableRuntimePersistence {
   appendPermissionDecision(input: {
     decision: PermissionDecision;
     expectedPreviousDecisionId: string;
-  }): Promise<PermissionDecision>;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<PermissionDecision>>;
   getCommandReceipt(
     workspaceId: string,
     commandId: string,
