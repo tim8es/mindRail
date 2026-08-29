@@ -43,22 +43,10 @@ export const COMMAND_SHAPES: Readonly<Record<ApplicationCommandName, Shape>> = {
   },
   ClaimTask: { required: ['taskId', 'sessionId', 'expectedTaskRevision'] },
   RenewLease: {
-    required: [
-      'taskId',
-      'sessionId',
-      'leaseId',
-      'fencingToken',
-      'expectedLeaseRevision',
-    ],
+    required: ['taskId', 'sessionId', 'leaseId', 'fencingToken', 'expectedLeaseRevision'],
   },
   ReleaseLease: {
-    required: [
-      'taskId',
-      'sessionId',
-      'leaseId',
-      'fencingToken',
-      'expectedLeaseRevision',
-    ],
+    required: ['taskId', 'sessionId', 'leaseId', 'fencingToken', 'expectedLeaseRevision'],
   },
   RecordCheckpoint: {
     required: ['taskId', 'sessionId', 'leaseId', 'fencingToken', 'kind', 'summary', 'evidence'],
@@ -130,9 +118,7 @@ export const QUERY_SHAPES: Readonly<Record<ApplicationQueryName, Shape>> = {
   ListPermissionDecisions: { required: ['requestId', 'limit'], optional: ['cursor'] },
 };
 
-export type ValidationResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; message: string };
+export type ValidationResult<T> = { ok: true; value: T } | { ok: false; message: string };
 
 export function parseApplicationCommand(
   commandName: ApplicationCommandName,
@@ -190,7 +176,10 @@ export function parseApplicationQuery(
   return { ok: true, value: record as unknown as ApplicationQuery };
 }
 
-function validateEnvelope(record: Record<string, unknown>, kind: 'command' | 'query'): string | undefined {
+function validateEnvelope(
+  record: Record<string, unknown>,
+  kind: 'command' | 'query',
+): string | undefined {
   if (record.protocolVersion !== '0.1') return 'protocolVersion must equal 0.1';
   if (!isProtocolEntityId(record.workspaceId)) return 'workspaceId must be an EntityId';
   if (!isActorRef(record.actor)) return 'actor must be a valid ActorRef';
@@ -224,7 +213,8 @@ function validateParallelCommand(
 ): string | undefined {
   switch (commandName) {
     case 'RegisterAgent':
-      if (!isBoundedString(record.displayName, 1, 200)) return 'displayName must be a bounded string';
+      if (!isBoundedString(record.displayName, 1, 200))
+        return 'displayName must be a bounded string';
       if (!isStringArray(record.capabilities)) return 'capabilities must be an array of strings';
       return undefined;
     case 'StartSession':
