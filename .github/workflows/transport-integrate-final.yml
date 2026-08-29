@@ -1,4 +1,4 @@
-name: Integrate transports final
+name: Integrate transports final verification
 
 on:
   push:
