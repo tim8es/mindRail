@@ -59,6 +59,8 @@ Adding the isolation boundary now avoids a future migration in which nearly ever
 
 A task claim is not modeled as a special task status. Lease authority is separate from task progress state.
 
+A session may execute a task only when its Agent capabilities satisfy the Task requirements. In set terms, `Task.requiredCapabilities` must be a subset of `Agent.capabilities` at assignment time.
+
 ### 5. Leases use fencing tokens
 
 Each lease has a positive integer `fencingToken`. Tokens increase monotonically for successive lease grants on the same task.
@@ -77,7 +79,12 @@ Idempotency keys belong to protocol commands rather than domain entities and the
 
 `Checkpoint`, `PermissionRequest`, `PermissionDecision`, and `AuditEvent` are append-only records in v1. Corrections are represented by later records rather than mutation of historical evidence.
 
-`PermissionDecision` supports `ALLOW`, `DENY`, and `HUMAN_REQUIRED`. `HUMAN_REQUIRED` grants no authority. A later final human decision may supersede the interim decision without rewriting history.
+`PermissionDecision` supports `ALLOW`, `DENY`, and `HUMAN_REQUIRED`.
+
+- `HUMAN_REQUIRED` grants no authority and may only be produced by policy evaluation.
+- A policy-based decision is attributed to a `system` actor and records a `PolicyRef`.
+- A human-based decision is attributed to a `human` actor and may only resolve to `ALLOW` or `DENY`.
+- Later decisions for one request form an explicit supersession chain instead of rewriting earlier decisions.
 
 ### 8. Audit is not event sourcing
 
@@ -102,13 +109,16 @@ The schema documents define structural validity. Cross-record/runtime invariants
 1. all referenced records belong to the same workspace;
 2. task dependencies refer to tasks in the same goal/workspace, contain no self-reference, and form an acyclic graph;
 3. a session belongs to its declared agent;
-4. a lease's task and session belong to the same workspace;
-5. at most one lease is active per task;
-6. fencing tokens increase monotonically per task and stale tokens cannot authorize mutation;
-7. mutable entity revisions increase monotonically on mutation;
-8. append-only records are never updated in place;
-9. a `HUMAN_REQUIRED` permission decision does not authorize the requested action;
-10. generated language bindings never override canonical schema semantics.
+4. an assigned agent satisfies all `Task.requiredCapabilities`;
+5. a lease's task and session belong to the same workspace;
+6. at most one lease is active per task;
+7. fencing tokens increase monotonically per task and stale tokens cannot authorize mutation;
+8. mutable entity revisions increase monotonically on mutation;
+9. append-only records are never updated in place;
+10. policy decisions are system-authored and human decisions are human-authored;
+11. a `HUMAN_REQUIRED` permission decision does not authorize the requested action and cannot be a human-authored final outcome;
+12. later permission decisions for one request supersede the immediately preceding decision in a single ordered chain;
+13. generated language bindings never override canonical schema semantics.
 
 The local runtime slice will implement and test the invariants that require state or cross-record lookup.
 
