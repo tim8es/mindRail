@@ -146,31 +146,19 @@ async function seedClaimedTask(transport: HttpTransport, commandPrefix: string) 
     systemActor,
     { agentId: registered.result.id },
   );
-  const goal = await command<Goal>(
-    transport,
-    'CreateGoal',
-    `${commandPrefix}-goal`,
-    systemActor,
-    {
-      title: 'Durable HTTP goal',
-      objective: 'Prove restart-safe protocol execution.',
-      successCriteria: ['The durable task completes after restart.'],
-    },
-  );
-  const task = await command<Task>(
-    transport,
-    'CreateTask',
-    `${commandPrefix}-task`,
-    systemActor,
-    {
-      goalId: goal.result.id,
-      title: 'Durable HTTP task',
-      objective: 'Survive process replacement.',
-      acceptanceCriteria: ['The same fenced execution remains authoritative.'],
-      requiredCapabilities: ['repo.write'],
-      dependencyTaskIds: [],
-    },
-  );
+  const goal = await command<Goal>(transport, 'CreateGoal', `${commandPrefix}-goal`, systemActor, {
+    title: 'Durable HTTP goal',
+    objective: 'Prove restart-safe protocol execution.',
+    successCriteria: ['The durable task completes after restart.'],
+  });
+  const task = await command<Task>(transport, 'CreateTask', `${commandPrefix}-task`, systemActor, {
+    goalId: goal.result.id,
+    title: 'Durable HTTP task',
+    objective: 'Survive process replacement.',
+    acceptanceCriteria: ['The same fenced execution remains authoritative.'],
+    requiredCapabilities: ['repo.write'],
+    dependencyTaskIds: [],
+  });
   const claim = await command<ClaimResult>(
     transport,
     'ClaimTask',
@@ -182,7 +170,15 @@ async function seedClaimedTask(transport: HttpTransport, commandPrefix: string) 
       expectedTaskRevision: task.result.revision,
     },
   );
-  return { systemActor, agentActor, agent: registered.result, session: session.result, goal: goal.result, task: task.result, claim: claim.result };
+  return {
+    systemActor,
+    agentActor,
+    agent: registered.result,
+    session: session.result,
+    goal: goal.result,
+    task: task.result,
+    claim: claim.result,
+  };
 }
 
 describe('durable HTTP control-plane E2E', () => {
@@ -204,16 +200,22 @@ describe('durable HTTP control-plane E2E', () => {
     expect(recoveredTask).toEqual(seeded.claim.task);
     expect(recoveredLease).toEqual(seeded.claim.lease);
 
-    await command<Checkpoint>(app.transport, 'RecordCheckpoint', 'restart-checkpoint', seeded.agentActor, {
-      taskId: seeded.task.id,
-      sessionId: seeded.session.id,
-      leaseId: recoveredLease.id,
-      fencingToken: recoveredLease.fencingToken,
-      kind: 'progress',
-      summary: 'Execution continued after reopening durable state.',
-      evidence: [],
-      progressPercent: 80,
-    });
+    await command<Checkpoint>(
+      app.transport,
+      'RecordCheckpoint',
+      'restart-checkpoint',
+      seeded.agentActor,
+      {
+        taskId: seeded.task.id,
+        sessionId: seeded.session.id,
+        leaseId: recoveredLease.id,
+        fencingToken: recoveredLease.fencingToken,
+        kind: 'progress',
+        summary: 'Execution continued after reopening durable state.',
+        evidence: [],
+        progressPercent: 80,
+      },
+    );
     const completed = await command<CompleteResult>(
       app.transport,
       'CompleteTask',
@@ -231,7 +233,10 @@ describe('durable HTTP control-plane E2E', () => {
     );
     expect(completed.result.task.status).toBe('succeeded');
     expect(completed.result.lease.status).toBe('released');
-    expect((await query<Goal>(app.transport, 'GetGoal', seeded.systemActor, { goalId: seeded.goal.id })).status).toBe('succeeded');
+    expect(
+      (await query<Goal>(app.transport, 'GetGoal', seeded.systemActor, { goalId: seeded.goal.id }))
+        .status,
+    ).toBe('succeeded');
     app.database.close();
   });
 
@@ -351,20 +356,44 @@ describe('durable HTTP control-plane E2E', () => {
     await first.persistence.bootstrapWorkspace(workspace());
     const systemActor = { type: 'system', id: 'system-1' } as const;
 
-    const agentA = await command<Agent>(first.transport, 'RegisterAgent', 'race-register-a', systemActor, {
-      displayName: 'Racer A',
-      capabilities: ['repo.write'],
-    });
-    const agentB = await command<Agent>(first.transport, 'RegisterAgent', 'race-register-b', systemActor, {
-      displayName: 'Racer B',
-      capabilities: ['repo.write'],
-    });
-    const sessionA = await command<Session>(first.transport, 'StartSession', 'race-session-a', systemActor, {
-      agentId: agentA.result.id,
-    });
-    const sessionB = await command<Session>(first.transport, 'StartSession', 'race-session-b', systemActor, {
-      agentId: agentB.result.id,
-    });
+    const agentA = await command<Agent>(
+      first.transport,
+      'RegisterAgent',
+      'race-register-a',
+      systemActor,
+      {
+        displayName: 'Racer A',
+        capabilities: ['repo.write'],
+      },
+    );
+    const agentB = await command<Agent>(
+      first.transport,
+      'RegisterAgent',
+      'race-register-b',
+      systemActor,
+      {
+        displayName: 'Racer B',
+        capabilities: ['repo.write'],
+      },
+    );
+    const sessionA = await command<Session>(
+      first.transport,
+      'StartSession',
+      'race-session-a',
+      systemActor,
+      {
+        agentId: agentA.result.id,
+      },
+    );
+    const sessionB = await command<Session>(
+      first.transport,
+      'StartSession',
+      'race-session-b',
+      systemActor,
+      {
+        agentId: agentB.result.id,
+      },
+    );
     const goal = await command<Goal>(first.transport, 'CreateGoal', 'race-goal', systemActor, {
       title: 'Competing claim goal',
       objective: 'Prove a single durable execution authority.',
@@ -381,18 +410,30 @@ describe('durable HTTP control-plane E2E', () => {
 
     const second = await openApplication(path, 'race-b', clock, 60_000, 300_000);
     const [claimA, claimB] = await Promise.all([
-      send(first.transport, 'commands', 'ClaimTask', { type: 'agent', id: agentA.result.id }, {
-        commandId: 'race-claim-a',
-        taskId: task.result.id,
-        sessionId: sessionA.result.id,
-        expectedTaskRevision: task.result.revision,
-      }),
-      send(second.transport, 'commands', 'ClaimTask', { type: 'agent', id: agentB.result.id }, {
-        commandId: 'race-claim-b',
-        taskId: task.result.id,
-        sessionId: sessionB.result.id,
-        expectedTaskRevision: task.result.revision,
-      }),
+      send(
+        first.transport,
+        'commands',
+        'ClaimTask',
+        { type: 'agent', id: agentA.result.id },
+        {
+          commandId: 'race-claim-a',
+          taskId: task.result.id,
+          sessionId: sessionA.result.id,
+          expectedTaskRevision: task.result.revision,
+        },
+      ),
+      send(
+        second.transport,
+        'commands',
+        'ClaimTask',
+        { type: 'agent', id: agentB.result.id },
+        {
+          commandId: 'race-claim-b',
+          taskId: task.result.id,
+          sessionId: sessionB.result.id,
+          expectedTaskRevision: task.result.revision,
+        },
+      ),
     ]);
     const winners = [claimA, claimB].filter((response) => response.status === 200);
     const losers = [claimA, claimB].filter((response) => response.status !== 200);
@@ -400,12 +441,19 @@ describe('durable HTTP control-plane E2E', () => {
     expect(losers).toHaveLength(1);
     const firstLease = (winners[0]!.body.result as ClaimResult).lease;
     expect(firstLease.fencingToken).toBe(1);
-    expect((await first.persistence.loadWorkspaceState('ws-a'))?.leases.filter((lease) => lease.status === 'active')).toHaveLength(1);
+    expect(
+      (await first.persistence.loadWorkspaceState('ws-a'))?.leases.filter(
+        (lease) => lease.status === 'active',
+      ),
+    ).toHaveLength(1);
 
-    const losingSession = firstLease.sessionId === sessionA.result.id ? sessionB.result : sessionA.result;
+    const losingSession =
+      firstLease.sessionId === sessionA.result.id ? sessionB.result : sessionA.result;
     const losingAgent = firstLease.sessionId === sessionA.result.id ? agentB.result : agentA.result;
     clock.now = new Date('2026-08-29T18:01:01.000Z');
-    const currentTask = await query<Task>(second.transport, 'GetTask', systemActor, { taskId: task.result.id });
+    const currentTask = await query<Task>(second.transport, 'GetTask', systemActor, {
+      taskId: task.result.id,
+    });
     const recovery = await command<ClaimResult>(
       second.transport,
       'ClaimTask',
