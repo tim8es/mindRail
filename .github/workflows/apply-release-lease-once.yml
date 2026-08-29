@@ -28,7 +28,7 @@ jobs:
       - name: Apply patch
         run: node scripts/tmp-release-lease-patch.mjs
       - name: Format
-        run: pnpm exec prettier --write src/runtime/in-memory-control-plane.ts src/runtime/protocol.ts src/runtime/protocol-validation.ts test/runtime/control-plane-runtime-surface-review.test.ts
+        run: pnpm exec prettier --write scripts/tmp-release-lease-patch.mjs src/runtime/in-memory-control-plane.ts src/runtime/protocol.ts src/runtime/protocol-validation.ts test/runtime/control-plane-runtime-surface-review.test.ts
       - name: Focused tests
         run: pnpm vitest run test/runtime/control-plane-runtime-surface.test.ts test/runtime/control-plane-runtime-surface-review.test.ts
       - name: Full quality
