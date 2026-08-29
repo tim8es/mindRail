@@ -180,24 +180,24 @@ error:
 
 ## 8. MVP command table
 
-| Command | Fixed intent fields | Concurrency/authority | Result |
-| --- | --- | --- | --- |
-| `RegisterAgent` | `displayName`, `capabilities` | authorized control-plane actor | `Agent` |
-| `StartSession` | `agentId` | authorized for active Agent | `Session` |
-| `HeartbeatSession` | `sessionId`, `expectedRevision` | active Session | updated `Session` |
-| `EndSession` | `sessionId`, `expectedRevision` | active Session; revokes active Leases | updated `Session`, affected `Lease[]` |
-| `CreateGoal` | `title`, `objective`, `successCriteria` | none | `Goal` |
-| `CreateTask` | `goalId`, `title`, `objective`, `acceptanceCriteria`, `requiredCapabilities`, `dependencyTaskIds` | Goal active; valid DAG | `Task` |
-| `ClaimTask` | `taskId`, `sessionId`, `expectedRevision` | active Session, capability match, no active Lease | current `Task`, new `Lease` |
-| `RenewLease` | `leaseId`, `sessionId`, `expectedRevision`, `fencingToken` | current active/unexpired Lease | updated `Lease` |
-| `ReleaseLease` | `leaseId`, `sessionId`, `expectedRevision`, `fencingToken` | current active Lease | updated `Lease` |
-| `RecordCheckpoint` | `taskId`, `sessionId`, `leaseId`, `fencingToken`, `kind`, `summary`, `evidence`, `progressPercent?` | current active Lease | `Checkpoint` |
-| `CompleteTask` | execution refs, `expectedRevision`, `summary`, `evidence` | current Lease + Task revision | updated `Task`, result `Checkpoint`, released `Lease` |
-| `FailTask` | execution refs, `expectedRevision`, `reason`, `summary`, `evidence` | current Lease + Task revision | updated `Task`, result `Checkpoint`, released `Lease` |
-| `BlockTask` | execution refs, `expectedRevision`, `reason`, `summary`, `evidence` | current Lease + Task revision | updated `Task`, blocked `Checkpoint`, released `Lease` |
-| `ResumeTask` | `taskId`, `expectedRevision` | authorized human/system; blocked Task; no active Lease | updated `Task` |
-| `RequestPermission` | `taskId`, `sessionId`, `leaseId`, `fencingToken`, `permission`, `justification`, `resource?` | current active Lease | `PermissionRequest`, initial policy `PermissionDecision` |
-| `RecordPermissionDecision` | `requestId`, `outcome`, `expectedPreviousDecisionId`, `reasonCode`, `reason?` | authenticated human; latest decision `HUMAN_REQUIRED` | new `PermissionDecision` |
+| Command                    | Fixed intent fields                                                                                 | Concurrency/authority                                  | Result                                                   |
+| -------------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------- |
+| `RegisterAgent`            | `displayName`, `capabilities`                                                                       | authorized control-plane actor                         | `Agent`                                                  |
+| `StartSession`             | `agentId`                                                                                           | authorized for active Agent                            | `Session`                                                |
+| `HeartbeatSession`         | `sessionId`, `expectedRevision`                                                                     | active Session                                         | updated `Session`                                        |
+| `EndSession`               | `sessionId`, `expectedRevision`                                                                     | active Session; revokes active Leases                  | updated `Session`, affected `Lease[]`                    |
+| `CreateGoal`               | `title`, `objective`, `successCriteria`                                                             | none                                                   | `Goal`                                                   |
+| `CreateTask`               | `goalId`, `title`, `objective`, `acceptanceCriteria`, `requiredCapabilities`, `dependencyTaskIds`   | Goal active; valid DAG                                 | `Task`                                                   |
+| `ClaimTask`                | `taskId`, `sessionId`, `expectedRevision`                                                           | active Session, capability match, no active Lease      | current `Task`, new `Lease`                              |
+| `RenewLease`               | `leaseId`, `sessionId`, `expectedRevision`, `fencingToken`                                          | current active/unexpired Lease                         | updated `Lease`                                          |
+| `ReleaseLease`             | `leaseId`, `sessionId`, `expectedRevision`, `fencingToken`                                          | current active Lease                                   | updated `Lease`                                          |
+| `RecordCheckpoint`         | `taskId`, `sessionId`, `leaseId`, `fencingToken`, `kind`, `summary`, `evidence`, `progressPercent?` | current active Lease                                   | `Checkpoint`                                             |
+| `CompleteTask`             | execution refs, `expectedRevision`, `summary`, `evidence`                                           | current Lease + Task revision                          | updated `Task`, result `Checkpoint`, released `Lease`    |
+| `FailTask`                 | execution refs, `expectedRevision`, `reason`, `summary`, `evidence`                                 | current Lease + Task revision                          | updated `Task`, result `Checkpoint`, released `Lease`    |
+| `BlockTask`                | execution refs, `expectedRevision`, `reason`, `summary`, `evidence`                                 | current Lease + Task revision                          | updated `Task`, blocked `Checkpoint`, released `Lease`   |
+| `ResumeTask`               | `taskId`, `expectedRevision`                                                                        | authorized human/system; blocked Task; no active Lease | updated `Task`                                           |
+| `RequestPermission`        | `taskId`, `sessionId`, `leaseId`, `fencingToken`, `permission`, `justification`, `resource?`        | current active Lease                                   | `PermissionRequest`, initial policy `PermissionDecision` |
+| `RecordPermissionDecision` | `requestId`, `outcome`, `expectedPreviousDecisionId`, `reasonCode`, `reason?`                       | authenticated human; latest decision `HUMAN_REQUIRED`  | new `PermissionDecision`                                 |
 
 `execution refs` means `taskId`, `sessionId`, `leaseId`, and `fencingToken`.
 
@@ -418,21 +418,21 @@ List queries use `limit: 1..100` and an opaque `cursor?`. v0.1 has no arbitrary 
 
 ## 11. MVP query table
 
-| Query | Input | Result | Use |
-| --- | --- | --- | --- |
-| `GetWorkspace` | workspace scope | `Workspace` | bootstrap/isolation |
-| `GetGoal` | `goalId` | `Goal` | inspect objective |
-| `ListGoals` | `status?`, cursor/limit | `Goal[]` + cursor | human/client state |
-| `GetTask` | `taskId` | `Task` | optimistic-concurrency refresh |
-| `ListGoalTasks` | `goalId`, cursor/limit | `Task[]` + cursor | decomposition/state |
-| `ListClaimableTasks` | `sessionId`, cursor/limit | claimable `Task[]` + cursor | work discovery/recovery |
-| `GetTaskExecutionView` | `taskId` | Task + active Lease/null + latest Checkpoint/null | recovery snapshot |
-| `ListTaskCheckpoints` | `taskId`, cursor/limit | ordered `Checkpoint[]` + cursor | handoff/history |
-| `GetAgent` | `agentId` | `Agent` | capability inspection |
-| `GetSession` | `sessionId` | `Session` | liveness/recovery |
-| `GetLease` | `leaseId` | `Lease` | renewal/conflict diagnosis |
-| `GetPermissionRequestState` | `requestId` | request + ordered decisions + latest decision | permission wait/resume |
-| `ListPendingPermissionRequests` | cursor/limit | requests whose latest decision is `HUMAN_REQUIRED` | human review queue |
+| Query                           | Input                     | Result                                             | Use                            |
+| ------------------------------- | ------------------------- | -------------------------------------------------- | ------------------------------ |
+| `GetWorkspace`                  | workspace scope           | `Workspace`                                        | bootstrap/isolation            |
+| `GetGoal`                       | `goalId`                  | `Goal`                                             | inspect objective              |
+| `ListGoals`                     | `status?`, cursor/limit   | `Goal[]` + cursor                                  | human/client state             |
+| `GetTask`                       | `taskId`                  | `Task`                                             | optimistic-concurrency refresh |
+| `ListGoalTasks`                 | `goalId`, cursor/limit    | `Task[]` + cursor                                  | decomposition/state            |
+| `ListClaimableTasks`            | `sessionId`, cursor/limit | claimable `Task[]` + cursor                        | work discovery/recovery        |
+| `GetTaskExecutionView`          | `taskId`                  | Task + active Lease/null + latest Checkpoint/null  | recovery snapshot              |
+| `ListTaskCheckpoints`           | `taskId`, cursor/limit    | ordered `Checkpoint[]` + cursor                    | handoff/history                |
+| `GetAgent`                      | `agentId`                 | `Agent`                                            | capability inspection          |
+| `GetSession`                    | `sessionId`               | `Session`                                          | liveness/recovery              |
+| `GetLease`                      | `leaseId`                 | `Lease`                                            | renewal/conflict diagnosis     |
+| `GetPermissionRequestState`     | `requestId`               | request + ordered decisions + latest decision      | permission wait/resume         |
+| `ListPendingPermissionRequests` | cursor/limit              | requests whose latest decision is `HUMAN_REQUIRED` | human review queue             |
 
 ### 11.1 ListClaimableTasks
 
@@ -472,26 +472,26 @@ Ordering follows decision `sequence`, not timestamp sorting.
 
 ## 12. Error-code table
 
-| Code | Meaning | Retry behavior |
-| --- | --- | --- |
-| `INVALID_INPUT` | closed request shape/value invalid | fix input; new attempt |
-| `UNSUPPORTED_PROTOCOL_VERSION` | requested protocol version unsupported | negotiate/use supported version |
-| `NOT_FOUND` | resource absent/not visible in Workspace | do not retry unchanged |
-| `CONFLICT` | authoritative state conflicts; no narrower code applies | re-read before new intent |
-| `REVISION_MISMATCH` | expected vs current mutable revision differ | re-read; do not blindly bump revision |
-| `LEASE_MISSING` | execution operation has no current Lease | discover/claim |
-| `LEASE_EXPIRED` | referenced Lease authority expired | claim a new Lease |
-| `STALE_FENCING_TOKEN` | presented token is not current Task execution authority | stop stale execution; reacquire |
-| `PERMISSION_DENIED` | latest authoritative permission outcome is `DENY` | stop unless context/policy changes |
-| `HUMAN_DECISION_REQUIRED` | latest outcome is `HUMAN_REQUIRED`; no grant exists | wait/query for human decision |
-| `INVALID_STATE_TRANSITION` | command illegal from current state | re-read/use valid command |
-| `IDEMPOTENCY_CONFLICT` | commandId already admitted with different fingerprint | fix client bug/use new id for new intent |
-| `SESSION_NOT_ACTIVE` | Session ended/expired | start/recover Session |
-| `CAPABILITY_MISMATCH` | Session Agent lacks Task requirements | use suitable Agent |
-| `DEPENDENCY_UNSATISFIED` | Task cannot claim/resume yet | resolve/wait dependencies |
-| `ACTOR_NOT_AUTHORIZED` | authenticated actor lacks MindRail operation authority | do not retry unchanged |
-| `POLICY_UNAVAILABLE` | deterministic policy authority unavailable | retry exact commandId when safe |
-| `INTERNAL_ERROR` | no narrower stable code | retry exact commandId only when marked retryable/commit unknown |
+| Code                           | Meaning                                                 | Retry behavior                                                  |
+| ------------------------------ | ------------------------------------------------------- | --------------------------------------------------------------- |
+| `INVALID_INPUT`                | closed request shape/value invalid                      | fix input; new attempt                                          |
+| `UNSUPPORTED_PROTOCOL_VERSION` | requested protocol version unsupported                  | negotiate/use supported version                                 |
+| `NOT_FOUND`                    | resource absent/not visible in Workspace                | do not retry unchanged                                          |
+| `CONFLICT`                     | authoritative state conflicts; no narrower code applies | re-read before new intent                                       |
+| `REVISION_MISMATCH`            | expected vs current mutable revision differ             | re-read; do not blindly bump revision                           |
+| `LEASE_MISSING`                | execution operation has no current Lease                | discover/claim                                                  |
+| `LEASE_EXPIRED`                | referenced Lease authority expired                      | claim a new Lease                                               |
+| `STALE_FENCING_TOKEN`          | presented token is not current Task execution authority | stop stale execution; reacquire                                 |
+| `PERMISSION_DENIED`            | latest authoritative permission outcome is `DENY`       | stop unless context/policy changes                              |
+| `HUMAN_DECISION_REQUIRED`      | latest outcome is `HUMAN_REQUIRED`; no grant exists     | wait/query for human decision                                   |
+| `INVALID_STATE_TRANSITION`     | command illegal from current state                      | re-read/use valid command                                       |
+| `IDEMPOTENCY_CONFLICT`         | commandId already admitted with different fingerprint   | fix client bug/use new id for new intent                        |
+| `SESSION_NOT_ACTIVE`           | Session ended/expired                                   | start/recover Session                                           |
+| `CAPABILITY_MISMATCH`          | Session Agent lacks Task requirements                   | use suitable Agent                                              |
+| `DEPENDENCY_UNSATISFIED`       | Task cannot claim/resume yet                            | resolve/wait dependencies                                       |
+| `ACTOR_NOT_AUTHORIZED`         | authenticated actor lacks MindRail operation authority  | do not retry unchanged                                          |
+| `POLICY_UNAVAILABLE`           | deterministic policy authority unavailable              | retry exact commandId when safe                                 |
+| `INTERNAL_ERROR`               | no narrower stable code                                 | retry exact commandId only when marked retryable/commit unknown |
 
 Code-specific details are fixed typed shapes, for example resource id/type, expected/actual revision, lease expiry, presented/current fencing token, permission request id, or missing capabilities.
 
@@ -595,16 +595,16 @@ Both are required.
 
 ## 15. Retry guidance
 
-| Situation | Required client behavior |
-| --- | --- |
-| timeout/connection loss; commit unknown | retry exact mutation with same `commandId` |
-| retryable `INTERNAL_ERROR` | retry exact `commandId` |
-| `REVISION_MISMATCH` | query current resource; issue new command only if intent remains valid |
-| `LEASE_EXPIRED` / `STALE_FENCING_TOKEN` | stop old authority; recover/claim new Lease; use new command ids |
-| `HUMAN_DECISION_REQUIRED` | wait/query; do not spin-retry protected action |
-| `PERMISSION_DENIED` | stop unless policy/context legitimately changes |
-| `IDEMPOTENCY_CONFLICT` | treat as client bug/key misuse |
-| transport 5xx/tool failure with no protocol result | retry exact mutation with same `commandId` |
+| Situation                                          | Required client behavior                                               |
+| -------------------------------------------------- | ---------------------------------------------------------------------- |
+| timeout/connection loss; commit unknown            | retry exact mutation with same `commandId`                             |
+| retryable `INTERNAL_ERROR`                         | retry exact `commandId`                                                |
+| `REVISION_MISMATCH`                                | query current resource; issue new command only if intent remains valid |
+| `LEASE_EXPIRED` / `STALE_FENCING_TOKEN`            | stop old authority; recover/claim new Lease; use new command ids       |
+| `HUMAN_DECISION_REQUIRED`                          | wait/query; do not spin-retry protected action                         |
+| `PERMISSION_DENIED`                                | stop unless policy/context legitimately changes                        |
+| `IDEMPOTENCY_CONFLICT`                             | treat as client bug/key misuse                                         |
+| transport 5xx/tool failure with no protocol result | retry exact mutation with same `commandId`                             |
 
 ## 16. Recovery after Session/Lease loss
 
@@ -698,23 +698,23 @@ Actor identity comes from authenticated request context and is validated against
 
 ### 18.1 Command routes
 
-| Command | HTTP mapping |
-| --- | --- |
-| `RegisterAgent` | `POST /v0.1/workspaces/{workspaceId}/agents` |
-| `StartSession` | `POST /v0.1/workspaces/{workspaceId}/sessions` |
-| `HeartbeatSession` | `POST /v0.1/workspaces/{workspaceId}/sessions/{sessionId}:heartbeat` |
-| `EndSession` | `POST /v0.1/workspaces/{workspaceId}/sessions/{sessionId}:end` |
-| `CreateGoal` | `POST /v0.1/workspaces/{workspaceId}/goals` |
-| `CreateTask` | `POST /v0.1/workspaces/{workspaceId}/tasks` |
-| `ClaimTask` | `POST /v0.1/workspaces/{workspaceId}/tasks/{taskId}:claim` |
-| `RenewLease` | `POST /v0.1/workspaces/{workspaceId}/leases/{leaseId}:renew` |
-| `ReleaseLease` | `POST /v0.1/workspaces/{workspaceId}/leases/{leaseId}:release` |
-| `RecordCheckpoint` | `POST /v0.1/workspaces/{workspaceId}/tasks/{taskId}/checkpoints` |
-| `CompleteTask` | `POST /v0.1/workspaces/{workspaceId}/tasks/{taskId}:complete` |
-| `FailTask` | `POST /v0.1/workspaces/{workspaceId}/tasks/{taskId}:fail` |
-| `BlockTask` | `POST /v0.1/workspaces/{workspaceId}/tasks/{taskId}:block` |
-| `ResumeTask` | `POST /v0.1/workspaces/{workspaceId}/tasks/{taskId}:resume` |
-| `RequestPermission` | `POST /v0.1/workspaces/{workspaceId}/permission-requests` |
+| Command                    | HTTP mapping                                                                    |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| `RegisterAgent`            | `POST /v0.1/workspaces/{workspaceId}/agents`                                    |
+| `StartSession`             | `POST /v0.1/workspaces/{workspaceId}/sessions`                                  |
+| `HeartbeatSession`         | `POST /v0.1/workspaces/{workspaceId}/sessions/{sessionId}:heartbeat`            |
+| `EndSession`               | `POST /v0.1/workspaces/{workspaceId}/sessions/{sessionId}:end`                  |
+| `CreateGoal`               | `POST /v0.1/workspaces/{workspaceId}/goals`                                     |
+| `CreateTask`               | `POST /v0.1/workspaces/{workspaceId}/tasks`                                     |
+| `ClaimTask`                | `POST /v0.1/workspaces/{workspaceId}/tasks/{taskId}:claim`                      |
+| `RenewLease`               | `POST /v0.1/workspaces/{workspaceId}/leases/{leaseId}:renew`                    |
+| `ReleaseLease`             | `POST /v0.1/workspaces/{workspaceId}/leases/{leaseId}:release`                  |
+| `RecordCheckpoint`         | `POST /v0.1/workspaces/{workspaceId}/tasks/{taskId}/checkpoints`                |
+| `CompleteTask`             | `POST /v0.1/workspaces/{workspaceId}/tasks/{taskId}:complete`                   |
+| `FailTask`                 | `POST /v0.1/workspaces/{workspaceId}/tasks/{taskId}:fail`                       |
+| `BlockTask`                | `POST /v0.1/workspaces/{workspaceId}/tasks/{taskId}:block`                      |
+| `ResumeTask`               | `POST /v0.1/workspaces/{workspaceId}/tasks/{taskId}:resume`                     |
+| `RequestPermission`        | `POST /v0.1/workspaces/{workspaceId}/permission-requests`                       |
 | `RecordPermissionDecision` | `POST /v0.1/workspaces/{workspaceId}/permission-requests/{requestId}/decisions` |
 
 Not part of v0.1:
@@ -727,39 +727,39 @@ PATCH /entities/{id}
 
 ### 18.2 Query routes
 
-| Query | HTTP mapping |
-| --- | --- |
-| `GetWorkspace` | `GET /v0.1/workspaces/{workspaceId}` |
-| `GetGoal` | `GET /v0.1/workspaces/{workspaceId}/goals/{goalId}` |
-| `ListGoals` | `GET /v0.1/workspaces/{workspaceId}/goals` |
-| `GetTask` | `GET /v0.1/workspaces/{workspaceId}/tasks/{taskId}` |
-| `ListGoalTasks` | `GET /v0.1/workspaces/{workspaceId}/goals/{goalId}/tasks` |
-| `ListClaimableTasks` | `GET /v0.1/workspaces/{workspaceId}/tasks?claimableForSession={sessionId}` |
-| `GetTaskExecutionView` | `GET /v0.1/workspaces/{workspaceId}/tasks/{taskId}/execution-view` |
-| `ListTaskCheckpoints` | `GET /v0.1/workspaces/{workspaceId}/tasks/{taskId}/checkpoints` |
-| `GetAgent` | `GET /v0.1/workspaces/{workspaceId}/agents/{agentId}` |
-| `GetSession` | `GET /v0.1/workspaces/{workspaceId}/sessions/{sessionId}` |
-| `GetLease` | `GET /v0.1/workspaces/{workspaceId}/leases/{leaseId}` |
-| `GetPermissionRequestState` | `GET /v0.1/workspaces/{workspaceId}/permission-requests/{requestId}` |
+| Query                           | HTTP mapping                                                                  |
+| ------------------------------- | ----------------------------------------------------------------------------- |
+| `GetWorkspace`                  | `GET /v0.1/workspaces/{workspaceId}`                                          |
+| `GetGoal`                       | `GET /v0.1/workspaces/{workspaceId}/goals/{goalId}`                           |
+| `ListGoals`                     | `GET /v0.1/workspaces/{workspaceId}/goals`                                    |
+| `GetTask`                       | `GET /v0.1/workspaces/{workspaceId}/tasks/{taskId}`                           |
+| `ListGoalTasks`                 | `GET /v0.1/workspaces/{workspaceId}/goals/{goalId}/tasks`                     |
+| `ListClaimableTasks`            | `GET /v0.1/workspaces/{workspaceId}/tasks?claimableForSession={sessionId}`    |
+| `GetTaskExecutionView`          | `GET /v0.1/workspaces/{workspaceId}/tasks/{taskId}/execution-view`            |
+| `ListTaskCheckpoints`           | `GET /v0.1/workspaces/{workspaceId}/tasks/{taskId}/checkpoints`               |
+| `GetAgent`                      | `GET /v0.1/workspaces/{workspaceId}/agents/{agentId}`                         |
+| `GetSession`                    | `GET /v0.1/workspaces/{workspaceId}/sessions/{sessionId}`                     |
+| `GetLease`                      | `GET /v0.1/workspaces/{workspaceId}/leases/{leaseId}`                         |
+| `GetPermissionRequestState`     | `GET /v0.1/workspaces/{workspaceId}/permission-requests/{requestId}`          |
 | `ListPendingPermissionRequests` | `GET /v0.1/workspaces/{workspaceId}/permission-requests?state=human-required` |
 
 Query parameters above are fixed selectors, not an arbitrary filter language.
 
 ### 18.3 HTTP status mapping
 
-| Protocol result/error | HTTP status |
-| --- | --- |
-| create success | `201 Created` |
-| other success | `200 OK` |
-| `INVALID_INPUT`, `UNSUPPORTED_PROTOCOL_VERSION` | `400 Bad Request` |
-| adapter authentication failure | `401 Unauthorized` |
-| `ACTOR_NOT_AUTHORIZED`, `PERMISSION_DENIED` | `403 Forbidden` |
-| `NOT_FOUND` | `404 Not Found` |
-| `REVISION_MISMATCH` via `If-Match` | `412 Precondition Failed` |
-| `HUMAN_DECISION_REQUIRED` | `428 Precondition Required` |
-| other state/lease/fencing/idempotency conflicts | `409 Conflict` |
-| `POLICY_UNAVAILABLE` | `503 Service Unavailable` |
-| `INTERNAL_ERROR` | `500 Internal Server Error` |
+| Protocol result/error                           | HTTP status                 |
+| ----------------------------------------------- | --------------------------- |
+| create success                                  | `201 Created`               |
+| other success                                   | `200 OK`                    |
+| `INVALID_INPUT`, `UNSUPPORTED_PROTOCOL_VERSION` | `400 Bad Request`           |
+| adapter authentication failure                  | `401 Unauthorized`          |
+| `ACTOR_NOT_AUTHORIZED`, `PERMISSION_DENIED`     | `403 Forbidden`             |
+| `NOT_FOUND`                                     | `404 Not Found`             |
+| `REVISION_MISMATCH` via `If-Match`              | `412 Precondition Failed`   |
+| `HUMAN_DECISION_REQUIRED`                       | `428 Precondition Required` |
+| other state/lease/fencing/idempotency conflicts | `409 Conflict`              |
+| `POLICY_UNAVAILABLE`                            | `503 Service Unavailable`   |
+| `INTERNAL_ERROR`                                | `500 Internal Server Error` |
 
 HTTP status is coarse classification; the response body retains the stable protocol code.
 
