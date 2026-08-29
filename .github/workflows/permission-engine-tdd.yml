@@ -34,7 +34,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Focused permission regressions
-        run: pnpm exec vitest run test/runtime/permission-engine.test.ts
+        run: pnpm exec vitest run test/runtime/permission-engine.test.ts test/runtime/permission-policy-fail-closed.test.ts
 
       - name: Full quality gate
         run: pnpm check
