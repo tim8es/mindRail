@@ -138,7 +138,10 @@ describe('durable task outcomes', () => {
       evidence: [],
     });
     const failed = success<TaskOutcomeResult>(failedResponse);
-    expect(failed.task).toMatchObject({ status: 'failed', revision: seeded.claim.task.revision + 1 });
+    expect(failed.task).toMatchObject({
+      status: 'failed',
+      revision: seeded.claim.task.revision + 1,
+    });
     expect(failed.task.statusReason).toEqual({
       code: 'execution.failed',
       summary: 'Execution failed deterministically.',
@@ -148,7 +151,10 @@ describe('durable task outcomes', () => {
       fencingToken: seeded.claim.lease.fencingToken,
       revision: seeded.claim.lease.revision + 1,
     });
-    expect(failed.checkpoint).toMatchObject({ kind: 'result', summary: 'Could not complete the task.' });
+    expect(failed.checkpoint).toMatchObject({
+      kind: 'result',
+      summary: 'Could not complete the task.',
+    });
     app.database.close();
 
     app = await openDispatcher(path, 'fail-replay', now);
@@ -171,7 +177,7 @@ describe('durable task outcomes', () => {
     expect(replay).toMatchObject({ replayed: true, correlationId: 'fail-replay' });
     expect(success<TaskOutcomeResult>(replay)).toEqual(failed);
     expect((await app.persistence.getTask('ws-a', seeded.task.id))?.status).toBe('failed');
-    expect((await app.persistence.listTaskCheckpoints('ws-a', seeded.task.id))).toHaveLength(1);
+    expect(await app.persistence.listTaskCheckpoints('ws-a', seeded.task.id)).toHaveLength(1);
     app.database.close();
   });
 
@@ -199,7 +205,10 @@ describe('durable task outcomes', () => {
       evidence: [],
     });
     const blocked = success<TaskOutcomeResult>(blockedResponse);
-    expect(blocked.task).toMatchObject({ status: 'blocked', revision: seeded.claim.task.revision + 1 });
+    expect(blocked.task).toMatchObject({
+      status: 'blocked',
+      revision: seeded.claim.task.revision + 1,
+    });
     expect(blocked.lease.status).toBe('released');
     expect(blocked.checkpoint).toMatchObject({
       kind: 'blocked',
