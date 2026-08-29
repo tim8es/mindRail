@@ -217,6 +217,11 @@ export class InMemoryControlPlane {
       }
       const replay = clone(existing.response);
       replay.replayed = true;
+      if (command.correlationId === undefined) {
+        delete replay.correlationId;
+      } else {
+        replay.correlationId = command.correlationId;
+      }
       return replay;
     }
 
@@ -350,7 +355,6 @@ export class InMemoryControlPlane {
   claimTask(input: ClaimTaskInput): ClaimTaskResult {
     this.assertWorkspace(input.workspaceId);
     const task = this.requireTask(input.workspaceId, input.taskId);
-    this.assertRevision(task.revision, input.expectedTaskRevision, `Task ${task.id}`);
 
     const session = this.requireActiveSession(input.workspaceId, input.sessionId);
     const agent = this.requireAgent(input.workspaceId, session.agentId);
@@ -368,6 +372,8 @@ export class InMemoryControlPlane {
       }
       throw new RuntimeError('CONFLICT', `Task ${task.id} already has an active Lease.`);
     }
+
+    this.assertRevision(task.revision, input.expectedTaskRevision, `Task ${task.id}`);
 
     if (task.status !== 'ready' && task.status !== 'running') {
       throw new RuntimeError('INVALID_STATE_TRANSITION', `Task ${task.id} is not claimable.`);
