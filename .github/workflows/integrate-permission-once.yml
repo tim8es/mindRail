@@ -30,6 +30,18 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Apply permission integration
         run: node scripts/tmp-integrate-permission.mjs
+      - name: Preserve ResumeTask validation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/runtime/protocol-validation.ts')
+          text = path.read_text()
+          text = text.replace("    case 'ResumeTask':\n    case 'RequestPermission':", "    case 'RequestPermission':", 1)
+          anchor = "    case 'RetryTask':\n      requireEntityId(command, 'taskId', errors);"
+          assert anchor in text
+          text = text.replace(anchor, "    case 'ResumeTask':\n" + anchor, 1)
+          path.write_text(text)
+          PY
       - name: Format
         run: pnpm exec prettier --write .
       - name: Focused permission tests
