@@ -1,10 +1,10 @@
 # Public Release Checklist
 
-This checklist is a release gate for changing the MindRail repository visibility from private to public.
+This checklist records the initial transition of MindRail from private to public development.
 
-## Required before visibility change
+## Before visibility change
 
-- [x] Review the reachable repository tree/history for credentials, tokens, private keys, personal secrets, and unintended personal data. No obvious credential-like material was found in the final foundation diff; the working branch was rewritten to one clean commit.
+- [x] Review the reachable repository tree/history for credentials, tokens, private keys, personal secrets, and unintended personal data. No obvious credential-like material was found in the final foundation change; the working branch was rewritten to one clean foundation commit before publication.
 - [x] Confirm `LICENSE` contains the standard BUSL-1.1 body separately from MindRail-specific parameters. The standard body was compared with the SPDX-published BUSL-1.1 text.
 - [x] Confirm README/project wording describes MindRail as source-available under BUSL-1.1, not OSI Open Source during the BSL period.
 - [x] Review open issues, pull request #1, reachable commit messages, and current documentation for information that should not become public.
@@ -13,15 +13,16 @@ This checklist is a release gate for changing the MindRail repository visibility
 
 ## Legal follow-up
 
-Professional review of the Additional Use Grant, licensor identity, Change Date/Change License compatibility, and future contribution/dual-licensing mechanics remains required before relying on those terms for material commercial enforcement. Publication must not be represented as legal validation.
+Professional review of the Additional Use Grant, licensor identity, Change Date/Change License compatibility, and future contribution/dual-licensing mechanics remains required before relying on those terms for material commercial enforcement. Publication is not legal validation.
 
-## Immediately after visibility change
+## After visibility change
 
-- [ ] Observe a real GitHub-hosted `Quality` job receiving a runner.
-- [ ] Generate and commit `pnpm-lock.yaml` using the pinned toolchain.
-- [ ] Run the full `pnpm check` gate and record the observed result.
+- [x] Observe a real GitHub-hosted `Quality` job receiving a runner.
+- [x] Generate and commit `pnpm-lock.yaml` using Node 24 and pinned pnpm 11.24.0.
+- [x] Run the full `pnpm check` gate successfully in GitHub Actions.
+- [x] Run `pnpm test:coverage` successfully without inventing a coverage threshold.
 - [ ] Enable minimal `main` branch protection/ruleset: PR required, `Quality` required, force-push/deletion blocked, conversation resolution required.
 - [ ] Verify with a test PR that missing/failing `Quality` actually blocks merge.
-- [ ] Reconcile `docs/CURRENT_STATE.md`, issues #2/#3, and PR #1 with fresh evidence.
+- [x] Reconcile `docs/CURRENT_STATE.md` and PR #1 with fresh execution evidence.
 
-Do not treat repository visibility alone as evidence that CI or branch protection is working.
+Repository visibility alone is never evidence that CI or branch protection is working.

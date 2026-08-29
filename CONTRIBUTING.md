@@ -1,6 +1,6 @@
 # Contributing to MindRail
 
-MindRail is in private early development. These rules are established now so future human and agent contributions share the same workflow.
+MindRail is in public early development. The repository is visible for transparent development and testing, but external code-contribution licensing mechanics are not finalized yet.
 
 ## Before you change code
 
@@ -36,7 +36,7 @@ Prefer several coherent commits over a single opaque dump, but do not split setu
 
 ## Quality
 
-Before requesting review, run the checks applicable to the change. Once the foundation toolchain is verified, the canonical aggregate command is:
+Before requesting review, run the checks applicable to the change. The canonical aggregate command is:
 
 ```bash
 pnpm check
@@ -69,8 +69,8 @@ A reviewable PR explains:
 - security/permission impact;
 - known limitations and unverified claims.
 
-## Licensing and contributions
+## Licensing and external contributions
 
-MindRail is source-available under BUSL-1.1 during its BSL period. Contribution mechanics for external contributors (including CLA/DCO and the right to offer alternative commercial licenses) will be finalized before the repository is opened for external contributions.
+MindRail is source-available under BUSL-1.1 during its BSL period. CLA/DCO and alternative-commercial-licensing mechanics will be finalized before external code contributions are accepted routinely.
 
-Until then, unsolicited external code contributions should not be accepted without an explicit licensing review.
+Until then, issues and design feedback are welcome, but unsolicited external code contributions should not be merged without explicit licensing review.

@@ -6,7 +6,7 @@ MindRail is an early-stage, source-available project exploring a simple problem:
 
 MindRail aims to provide that control plane without making any single model vendor, agent runtime, cloud provider, or chat session the system of record.
 
-> **Status:** private early development. The orchestrator runtime is not implemented yet. The repository currently establishes architecture and engineering foundations.
+> **Status:** public early development. The orchestrator runtime is not implemented yet. The repository currently establishes architecture and engineering foundations.
 
 ## Model
 
@@ -65,18 +65,19 @@ See [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md) for the authoritative answe
 
 ## Development
 
-The repository baseline targets Node.js 24 and pins pnpm through `package.json`. The canonical aggregate quality command is:
+The repository baseline targets Node.js 24 and pins pnpm through `package.json`.
 
 ```bash
+pnpm install --frozen-lockfile
 pnpm check
 ```
 
-A committed lockfile and successful execution of the toolchain are still pending because GitHub-hosted jobs currently fail before runner assignment. Consult `docs/CURRENT_STATE.md` for exact verification evidence rather than assuming the command has passed.
+The foundation quality gate has been executed successfully on GitHub-hosted Ubuntu with Node 24 and the pinned pnpm version. Exact evidence and remaining limitations are recorded in `docs/CURRENT_STATE.md`.
 
 ## License
 
 MindRail is distributed under **Business Source License 1.1 (BUSL-1.1)** with project-specific parameters and a future Change License. During the BSL period it is **source-available, not OSI Open Source**.
 
-The Additional Use Grant is intended to permit internal/self-hosted production use while protecting the project from use as a competing hosted/managed MindRail service. BSL does not provide a blanket prohibition on redistribution; the project-specific parameters require legal review before the repository becomes public or commercial licensing is offered.
+The Additional Use Grant is intended to permit internal/self-hosted production use while keeping competing hosted/managed MindRail services outside the grant. BSL does not provide a blanket prohibition on redistribution. The MindRail-specific license parameters have not received professional legal review and should not be treated as legally validated for material commercial enforcement.
 
 See [`LICENSE`](LICENSE) and [`docs/adr/ADR-0002-licensing-model.md`](docs/adr/ADR-0002-licensing-model.md).
