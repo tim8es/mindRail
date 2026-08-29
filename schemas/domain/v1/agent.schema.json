@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mindrail:schema:domain:v1:agent",
+  "title": "Agent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "workspaceId",
+    "revision",
+    "createdAt",
+    "updatedAt",
+    "displayName",
+    "status",
+    "capabilities"
+  ],
+  "properties": {
+    "id": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "workspaceId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "createdAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" },
+    "updatedAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" },
+    "displayName": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "status": { "type": "string", "enum": ["active", "disabled"] },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/NamespacedName" }
+    }
+  }
+}

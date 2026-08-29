@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mindrail:schema:domain:v1:lease",
+  "title": "Lease",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "workspaceId",
+    "taskId",
+    "sessionId",
+    "revision",
+    "createdAt",
+    "updatedAt",
+    "status",
+    "fencingToken",
+    "expiresAt"
+  ],
+  "properties": {
+    "id": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "workspaceId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "taskId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "sessionId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "createdAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" },
+    "updatedAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" },
+    "status": { "type": "string", "enum": ["active", "released", "expired", "revoked"] },
+    "fencingToken": { "type": "integer", "minimum": 1 },
+    "expiresAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" }
+  }
+}
