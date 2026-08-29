@@ -196,13 +196,40 @@ export interface DurableRuntimePersistence {
     workspaceId: string,
     commandId: string,
   ): Promise<StoredCommandReceipt | undefined>;
+  getWorkspace(workspaceId: string): Promise<Workspace | undefined>;
+  getGoal(workspaceId: string, goalId: string): Promise<Goal | undefined>;
+  getTask(workspaceId: string, taskId: string): Promise<Task | undefined>;
+  getAgent(workspaceId: string, agentId: string): Promise<Agent | undefined>;
+  getSession(workspaceId: string, sessionId: string): Promise<Session | undefined>;
+  getLease(workspaceId: string, leaseId: string): Promise<Lease | undefined>;
+  getPermissionRequest(
+    workspaceId: string,
+    requestId: string,
+  ): Promise<PermissionRequest | undefined>;
   loadWorkspaceState(workspaceId: string): Promise<WorkspaceStateSnapshot | undefined>;
-  listTaskCheckpoints(workspaceId: string, taskId: string): Promise<Checkpoint[]>;
+  listClaimableTasks(
+    workspaceId: string,
+    sessionId: string,
+    limit: number,
+    offset?: number,
+  ): Promise<Task[]>;
+  listTaskCheckpoints(
+    workspaceId: string,
+    taskId: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<Checkpoint[]>;
   listAuditEvents(workspaceId: string, limit: number): Promise<AuditEvent[]>;
-  listPermissionDecisions(workspaceId: string, requestId: string): Promise<PermissionDecision[]>;
+  listPermissionDecisions(
+    workspaceId: string,
+    requestId: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<PermissionDecision[]>;
   listPendingHumanPermissions(
     workspaceId: string,
     limit: number,
+    offset?: number,
   ): Promise<PendingHumanPermission[]>;
   listExpiredActiveLeases(workspaceId: string, now: string, limit: number): Promise<Lease[]>;
   listActiveSessionsLastSeenBefore(
