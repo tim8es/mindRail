@@ -1,0 +1,33 @@
+name: Permission merge probe
+
+on:
+  push:
+    branches:
+      - integration/permission-v0-1
+    paths:
+      - .github/workflows/permission-merge-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: integration/permission-v0-1
+          fetch-depth: 0
+      - name: Probe three-way application
+        run: |
+          git fetch origin feature/permission-engine-v0-1
+          git diff --binary 87fbfcf2ed738071f648a3b94bfff1df1f235dba..origin/feature/permission-engine-v0-1 > /tmp/permission.patch
+          set +e
+          git apply --3way --index /tmp/permission.patch
+          status=$?
+          set -e
+          echo "apply_status=$status"
+          git status --short
+          git diff --cc || true
+          exit 0
