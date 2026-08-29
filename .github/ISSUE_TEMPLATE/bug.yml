@@ -1,0 +1,34 @@
+name: Bug report
+description: Report reproducible behavior that differs from the documented contract
+title: 'bug: '
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: 'Report observed behavior and evidence. Do not report planned-but-unimplemented roadmap items as bugs.'
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What contract, ADR, documentation, or prior verified behavior establishes the expectation?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction and evidence
+      description: Minimal steps, commands, inputs, logs, or other evidence. Remove secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Runtime, OS, versions, provider, and commit/ref when relevant.
