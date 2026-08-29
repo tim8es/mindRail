@@ -215,7 +215,10 @@ describe('remaining runtime lifecycle surface', () => {
   });
 
   it('renews only the current owner Lease, preserving its fence and extending expiry', () => {
-    const { runtime, advance } = createRuntime({ leaseDurationMs: 60_000, sessionTimeoutMs: 300_000 });
+    const { runtime, advance } = createRuntime({
+      leaseDurationMs: 60_000,
+      sessionTimeoutMs: 300_000,
+    });
     const owner = createWorker(runtime, 'Owner');
     const other = createWorker(runtime, 'Other');
     const { task, claim } = createRunningTask(runtime, owner.session.id);
@@ -256,7 +259,10 @@ describe('remaining runtime lifecycle surface', () => {
   });
 
   it('rejects Lease renewal from a stale Session', () => {
-    const { runtime, advance } = createRuntime({ leaseDurationMs: 120_000, sessionTimeoutMs: 60_000 });
+    const { runtime, advance } = createRuntime({
+      leaseDurationMs: 120_000,
+      sessionTimeoutMs: 60_000,
+    });
     const { agent, session } = createWorker(runtime);
     const { task, claim } = createRunningTask(runtime, session.id);
 

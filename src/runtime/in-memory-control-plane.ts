@@ -365,11 +365,7 @@ export class InMemoryControlPlane {
   heartbeatSession(input: HeartbeatSessionInput): Session {
     this.assertWorkspace(input.workspaceId);
     const session = this.requireActiveSession(input.workspaceId, input.sessionId);
-    this.assertRevision(
-      session.revision,
-      input.expectedSessionRevision,
-      `Session ${session.id}`,
-    );
+    this.assertRevision(session.revision, input.expectedSessionRevision, `Session ${session.id}`);
 
     const timestamp = this.timestamp();
     const updated: Session = {
@@ -386,11 +382,7 @@ export class InMemoryControlPlane {
   endSession(input: EndSessionInput): EndSessionResult {
     this.assertWorkspace(input.workspaceId);
     const session = this.requireActiveSession(input.workspaceId, input.sessionId);
-    this.assertRevision(
-      session.revision,
-      input.expectedSessionRevision,
-      `Session ${session.id}`,
-    );
+    this.assertRevision(session.revision, input.expectedSessionRevision, `Session ${session.id}`);
 
     const timestamp = this.timestamp();
     const ended: Session = {
