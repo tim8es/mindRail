@@ -1,6 +1,6 @@
 name: Feature proposal
 description: Propose a capability from a user/problem perspective
-title: "feat: "
+title: 'feat: '
 labels: []
 body:
   - type: textarea

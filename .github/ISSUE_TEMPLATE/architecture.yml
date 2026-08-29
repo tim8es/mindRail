@@ -1,6 +1,6 @@
 name: Architecture decision
 description: Propose a change to a persistent contract or system boundary
-title: "adr: "
+title: 'adr: '
 labels: []
 body:
   - type: textarea
@@ -29,8 +29,8 @@ body:
     attributes:
       label: ADR expected?
       options:
-        - "Yes — this changes a persistent contract/boundary"
-        - "Unclear — decide during review"
-        - "No — explain why this is an implementation detail"
+        - 'Yes — this changes a persistent contract/boundary'
+        - 'Unclear — decide during review'
+        - 'No — explain why this is an implementation detail'
     validations:
       required: true

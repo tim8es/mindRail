@@ -4,14 +4,14 @@ This file is a routing map. Keep it short; do not turn it into a second architec
 
 ## Authority order
 
-| Priority | Source | Purpose |
-| --- | --- | --- |
-| 1 | `AGENTS.md` | Repository execution contract for agents |
-| 2 | Accepted `docs/adr/*` | Binding architecture and policy decisions |
-| 3 | `docs/CURRENT_STATE.md` | Factual repository capability and verification state |
-| 4 | `docs/architecture/*` | Current architecture derived from accepted ADRs |
-| 5 | `docs/roadmap/*` | Planned work only |
-| 6 | `README.md` | Public overview |
+| Priority | Source                  | Purpose                                              |
+| -------- | ----------------------- | ---------------------------------------------------- |
+| 1        | `AGENTS.md`             | Repository execution contract for agents             |
+| 2        | Accepted `docs/adr/*`   | Binding architecture and policy decisions            |
+| 3        | `docs/CURRENT_STATE.md` | Factual repository capability and verification state |
+| 4        | `docs/architecture/*`   | Current architecture derived from accepted ADRs      |
+| 5        | `docs/roadmap/*`        | Planned work only                                    |
+| 6        | `README.md`             | Public overview                                      |
 
 If sources conflict, the higher-priority source wins and the contradiction must be corrected.
 

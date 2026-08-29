@@ -44,7 +44,7 @@ Each ADR includes:
 
 ## Index
 
-| ADR | Status | Decision |
-| --- | --- | --- |
-| [ADR-0001](ADR-0001-system-boundaries.md) | Accepted | Core system boundaries and vendor neutrality |
-| [ADR-0002](ADR-0002-licensing-model.md) | Accepted | BUSL-1.1 source-available licensing direction |
+| ADR                                       | Status   | Decision                                      |
+| ----------------------------------------- | -------- | --------------------------------------------- |
+| [ADR-0001](ADR-0001-system-boundaries.md) | Accepted | Core system boundaries and vendor neutrality  |
+| [ADR-0002](ADR-0002-licensing-model.md)   | Accepted | BUSL-1.1 source-available licensing direction |

@@ -1,11 +1,11 @@
 name: Bug report
 description: Report reproducible behavior that differs from the documented contract
-title: "bug: "
+title: 'bug: '
 labels: []
 body:
   - type: markdown
     attributes:
-      value: "Report observed behavior and evidence. Do not report planned-but-unimplemented roadmap items as bugs."
+      value: 'Report observed behavior and evidence. Do not report planned-but-unimplemented roadmap items as bugs.'
   - type: textarea
     id: observed
     attributes:
