@@ -833,6 +833,21 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     });
   }
 
+  async commitCommandReceipt(
+    receipt: CommandReceiptInput,
+  ): Promise<MutationCommitResult<undefined>> {
+    this.assertReceipt(receipt.workspaceId, receipt);
+    return this.coordinator.runSerialized(receipt.workspaceId, async () => {
+      const replay = await this.resolveReceipt(receipt);
+      if (replay) return replay;
+      await this.requireWorkspace(receipt.workspaceId);
+      const statements: D1PreparedStatementLike[] = [];
+      this.pushReceiptStatement(statements, receipt);
+      await this.batch(statements, 'commit command receipt');
+      return { kind: 'committed', value: undefined };
+    });
+  }
+
   async getCommandReceipt(
     workspaceId: string,
     commandId: string,
@@ -940,12 +955,19 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
   async listClaimableTasks(
     workspaceId: string,
     sessionId: string,
+    now: string,
+    sessionCutoff: string,
     limit: number,
     offset = 0,
   ): Promise<Task[]> {
+    const nowMs = timestampMs(now, 'claimable now');
+    const cutoffMs = timestampMs(sessionCutoff, 'claimable session cutoff');
     const session = await this.getSession(workspaceId, sessionId);
     if (!session) throw new PersistenceError('NOT_FOUND', `Session ${sessionId} was not found.`);
-    if (session.status !== 'active') {
+    if (
+      session.status !== 'active' ||
+      timestampMs(session.lastSeenAt, 'Session.lastSeenAt') <= cutoffMs
+    ) {
       throw new PersistenceError('CONFLICT', `Session ${sessionId} is not active.`);
     }
     const agent = await this.getAgent(workspaceId, session.agentId);
@@ -955,7 +977,26 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     return this.readRecords<Task>(
       `SELECT t.record_json
        FROM tasks t
-       WHERE t.workspace_id = ? AND t.status = 'ready'
+       WHERE t.workspace_id = ?
+         AND (
+           t.status = 'ready'
+           OR (
+             t.status = 'running'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM leases l
+               JOIN sessions owner_session
+                 ON owner_session.workspace_id = l.workspace_id
+                AND owner_session.id = l.session_id
+               WHERE l.workspace_id = t.workspace_id
+                 AND l.task_id = t.id
+                 AND l.status = 'active'
+                 AND l.expires_at_ms > ?
+                 AND owner_session.status = 'active'
+                 AND owner_session.last_seen_at_ms > ?
+             )
+           )
+         )
          AND NOT EXISTS (
            SELECT 1
            FROM task_required_capabilities trc
@@ -971,6 +1012,8 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
        ORDER BY t.created_at_ms, t.id
        LIMIT ? OFFSET ?`,
       workspaceId,
+      nowMs,
+      cutoffMs,
       agent.id,
       boundedLimit(limit),
       boundedOffset(offset),

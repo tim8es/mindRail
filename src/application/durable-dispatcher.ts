@@ -101,7 +101,15 @@ async function dispatchDurableCommand(
         : { permissionPolicy: options.permissionPolicy }),
     });
     const semanticResponse = runtime.execute(command);
-    if ('error' in semanticResponse) return semanticResponse;
+    if ('error' in semanticResponse) {
+      const committed = await options.persistence.commitCommandReceipt(
+        errorReceiptFor(command, fingerprint, semanticResponse as CommandFailure, options.now()),
+      );
+      if (committed.kind === 'replayed') {
+        return replayStoredReceipt(command, fingerprint, committed.receipt);
+      }
+      return semanticResponse;
+    }
 
     return await commitDurableSuccess(options, command, fingerprint, semanticResponse);
   } catch (error) {
@@ -208,9 +216,12 @@ async function dispatchDurableQuery(
         }
         const window = listWindow(query.limit, query.cursor);
         if (!window) return invalidListWindow(query);
+        const now = options.now();
         const rows = await options.persistence.listClaimableTasks(
           query.workspaceId,
           query.sessionId,
+          now.toISOString(),
+          new Date(now.getTime() - options.sessionTimeoutMs).toISOString(),
           window.limit + 1,
           window.offset,
         );
@@ -426,6 +437,23 @@ function receiptFor(
     semanticFingerprint: fingerprint,
     outcomeKind: 'result',
     responseSnapshot,
+    createdAt: now.toISOString(),
+  };
+}
+
+function errorReceiptFor(
+  command: ApplicationCommand,
+  fingerprint: string,
+  responseSnapshot: CommandFailure,
+  now: Date,
+): CommandReceiptInput {
+  return {
+    workspaceId: command.workspaceId,
+    commandId: command.commandId,
+    command: command.command,
+    semanticFingerprint: fingerprint,
+    outcomeKind: 'error',
+    responseSnapshot: structuredClone(responseSnapshot),
     createdAt: now.toISOString(),
   };
 }

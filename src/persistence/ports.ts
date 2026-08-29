@@ -192,6 +192,7 @@ export interface DurableRuntimePersistence {
     receipt?: CommandReceiptInput;
     auditEvent?: AuditEvent;
   }): Promise<MutationCommitResult<PermissionDecision>>;
+  commitCommandReceipt(receipt: CommandReceiptInput): Promise<MutationCommitResult<undefined>>;
   getCommandReceipt(
     workspaceId: string,
     commandId: string,
@@ -210,6 +211,8 @@ export interface DurableRuntimePersistence {
   listClaimableTasks(
     workspaceId: string,
     sessionId: string,
+    now: string,
+    sessionCutoff: string,
     limit: number,
     offset?: number,
   ): Promise<Task[]>;
