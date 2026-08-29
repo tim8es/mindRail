@@ -66,6 +66,17 @@ export interface CommandReceiptInput {
 
 export type StoredCommandReceipt = Readonly<CommandReceiptInput>;
 
+export interface DeferredCommandReceiptInput<T> {
+  workspaceId: string;
+  commandId: string;
+  command: string;
+  semanticFingerprint: string;
+  outcomeKind: 'result' | 'error';
+  createdAt: string;
+  expiresAt?: string;
+  buildResponseSnapshot(value: T): unknown;
+}
+
 export type MutationCommitResult<T> =
   | {
       kind: 'committed';
@@ -107,6 +118,7 @@ export interface ClaimTaskCommitInput {
   lease: Omit<Lease, 'fencingToken'>;
   now: string;
   receipt?: CommandReceiptInput;
+  deferredReceipt?: DeferredCommandReceiptInput<ClaimTaskCommitValue>;
   auditEvent?: AuditEvent;
 }
 
@@ -135,8 +147,16 @@ export interface CompleteTaskCommitValue {
 
 export interface DurableRuntimePersistence {
   bootstrapWorkspace(workspace: Workspace): Promise<void>;
-  createAgent(input: { agent: Agent }): Promise<void>;
-  createSession(input: { session: Session }): Promise<void>;
+  createAgent(input: {
+    agent: Agent;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Agent>>;
+  createSession(input: {
+    session: Session;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Session>>;
   createGoal(input: {
     goal: Goal;
     receipt?: CommandReceiptInput;
@@ -150,7 +170,12 @@ export interface DurableRuntimePersistence {
   claimTask(input: ClaimTaskCommitInput): Promise<MutationCommitResult<ClaimTaskCommitValue>>;
   updateTask(input: { task: Task; expectedRevision: number }): Promise<Task>;
   updateGoal(input: { goal: Goal; expectedRevision: number }): Promise<Goal>;
-  appendCheckpoint(input: { checkpoint: Checkpoint; now: string }): Promise<Checkpoint>;
+  appendCheckpoint(input: {
+    checkpoint: Checkpoint;
+    now: string;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Checkpoint>>;
   completeTask(
     input: CompleteTaskCommitInput,
   ): Promise<MutationCommitResult<CompleteTaskCommitValue>>;
@@ -164,18 +189,50 @@ export interface DurableRuntimePersistence {
   appendPermissionDecision(input: {
     decision: PermissionDecision;
     expectedPreviousDecisionId: string;
-  }): Promise<PermissionDecision>;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<PermissionDecision>>;
+  commitCommandReceipt(receipt: CommandReceiptInput): Promise<MutationCommitResult<undefined>>;
   getCommandReceipt(
     workspaceId: string,
     commandId: string,
   ): Promise<StoredCommandReceipt | undefined>;
+  getWorkspace(workspaceId: string): Promise<Workspace | undefined>;
+  getGoal(workspaceId: string, goalId: string): Promise<Goal | undefined>;
+  getTask(workspaceId: string, taskId: string): Promise<Task | undefined>;
+  getAgent(workspaceId: string, agentId: string): Promise<Agent | undefined>;
+  getSession(workspaceId: string, sessionId: string): Promise<Session | undefined>;
+  getLease(workspaceId: string, leaseId: string): Promise<Lease | undefined>;
+  getPermissionRequest(
+    workspaceId: string,
+    requestId: string,
+  ): Promise<PermissionRequest | undefined>;
   loadWorkspaceState(workspaceId: string): Promise<WorkspaceStateSnapshot | undefined>;
-  listTaskCheckpoints(workspaceId: string, taskId: string): Promise<Checkpoint[]>;
+  listClaimableTasks(
+    workspaceId: string,
+    sessionId: string,
+    now: string,
+    sessionCutoff: string,
+    limit: number,
+    offset?: number,
+  ): Promise<Task[]>;
+  listTaskCheckpoints(
+    workspaceId: string,
+    taskId: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<Checkpoint[]>;
   listAuditEvents(workspaceId: string, limit: number): Promise<AuditEvent[]>;
-  listPermissionDecisions(workspaceId: string, requestId: string): Promise<PermissionDecision[]>;
+  listPermissionDecisions(
+    workspaceId: string,
+    requestId: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<PermissionDecision[]>;
   listPendingHumanPermissions(
     workspaceId: string,
     limit: number,
+    offset?: number,
   ): Promise<PendingHumanPermission[]>;
   listExpiredActiveLeases(workspaceId: string, now: string, limit: number): Promise<Lease[]>;
   listActiveSessionsLastSeenBefore(

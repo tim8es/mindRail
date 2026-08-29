@@ -18,6 +18,7 @@ import {
   type CommandReceiptInput,
   type CompleteTaskCommitInput,
   type CompleteTaskCommitValue,
+  type DeferredCommandReceiptInput,
   type DurableRuntimePersistence,
   type MutationCommitResult,
   type PendingHumanPermission,
@@ -102,10 +103,18 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     });
   }
 
-  async createAgent(input: { agent: Agent }): Promise<void> {
+  async createAgent(input: {
+    agent: Agent;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Agent>> {
     const { agent } = input;
     this.assertCanonical('Agent', agent);
-    await this.coordinator.runSerialized(agent.workspaceId, async () => {
+    this.assertRelatedAudit(agent.workspaceId, input.auditEvent);
+    this.assertReceipt(agent.workspaceId, input.receipt);
+    return this.coordinator.runSerialized(agent.workspaceId, async () => {
+      const replay = await this.resolveReceipt(input.receipt);
+      if (replay) return replay;
       await this.requireWorkspace(agent.workspaceId);
       const statements: D1PreparedStatementLike[] = [
         this.database
@@ -132,20 +141,31 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
             .bind(agent.workspaceId, agent.id, capability),
         ),
       ];
+      this.pushAuditStatement(statements, input.auditEvent);
+      this.pushReceiptStatement(statements, input.receipt);
       await this.batch(statements, 'create Agent');
+      return { kind: 'committed', value: clone(agent) };
     });
   }
 
-  async createSession(input: { session: Session }): Promise<void> {
+  async createSession(input: {
+    session: Session;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Session>> {
     const { session } = input;
     this.assertCanonical('Session', session);
-    await this.coordinator.runSerialized(session.workspaceId, async () => {
+    this.assertRelatedAudit(session.workspaceId, input.auditEvent);
+    this.assertReceipt(session.workspaceId, input.receipt);
+    return this.coordinator.runSerialized(session.workspaceId, async () => {
+      const replay = await this.resolveReceipt(input.receipt);
+      if (replay) return replay;
       await this.requireWorkspace(session.workspaceId);
       const agent = await this.getAgent(session.workspaceId, session.agentId);
       if (!agent) {
         throw new PersistenceError('NOT_FOUND', `Agent ${session.agentId} was not found.`);
       }
-      await this.run(
+      const statements: D1PreparedStatementLike[] = [
         this.database
           .prepare(
             `INSERT INTO sessions(
@@ -164,8 +184,11 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
             timestampMs(session.lastSeenAt, 'Session.lastSeenAt'),
             serializeJson(session, 'Session'),
           ),
-        'create Session',
-      );
+      ];
+      this.pushAuditStatement(statements, input.auditEvent);
+      this.pushReceiptStatement(statements, input.receipt);
+      await this.batch(statements, 'create Session');
+      return { kind: 'committed', value: clone(session) };
     });
   }
 
@@ -285,12 +308,16 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
   async claimTask(
     input: ClaimTaskCommitInput,
   ): Promise<MutationCommitResult<ClaimTaskCommitValue>> {
+    if (input.receipt !== undefined && input.deferredReceipt !== undefined) {
+      throw new PersistenceError('INVALID_RECORD', 'ClaimTask cannot supply two receipt sources.');
+    }
     this.assertReceipt(input.workspaceId, input.receipt);
+    this.assertDeferredReceipt(input.workspaceId, input.deferredReceipt);
     this.assertRelatedAudit(input.workspaceId, input.auditEvent);
     const nowMs = timestampMs(input.now, 'claim now');
 
     return this.coordinator.runSerialized(input.workspaceId, async () => {
-      const replay = await this.resolveReceipt(input.receipt);
+      const replay = await this.resolveReceiptSource(input.receipt, input.deferredReceipt);
       if (replay) return replay;
       await this.requireWorkspace(input.workspaceId);
 
@@ -320,12 +347,11 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
       const statements: D1PreparedStatementLike[] = [];
       if (activeLease && timestampMs(activeLease.expiresAt, 'Lease.expiresAt') > nowMs) {
         if (activeLease.sessionId === input.sessionId) {
-          this.pushReceiptStatement(statements, input.receipt);
+          const value = { task: clone(task), lease: clone(activeLease) };
+          const finalReceipt = this.materializeReceipt(input.receipt, input.deferredReceipt, value);
+          this.pushReceiptStatement(statements, finalReceipt);
           if (statements.length > 0) await this.batch(statements, 'record duplicate claim receipt');
-          return {
-            kind: 'committed',
-            value: { task: clone(task), lease: clone(activeLease) },
-          };
+          return { kind: 'committed', value };
         }
         throw new PersistenceError(
           'CONFLICT',
@@ -436,9 +462,11 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
 
       statements.push(this.insertLeaseStatement(lease));
       this.pushAuditStatement(statements, input.auditEvent);
-      this.pushReceiptStatement(statements, input.receipt);
+      const value = { task: clone(nextTask), lease: clone(lease) };
+      const finalReceipt = this.materializeReceipt(input.receipt, input.deferredReceipt, value);
+      this.pushReceiptStatement(statements, finalReceipt);
       await this.batch(statements, 'claim Task');
-      return { kind: 'committed', value: { task: clone(nextTask), lease: clone(lease) } };
+      return { kind: 'committed', value };
     });
   }
 
@@ -534,14 +562,26 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     });
   }
 
-  async appendCheckpoint(input: { checkpoint: Checkpoint; now: string }): Promise<Checkpoint> {
+  async appendCheckpoint(input: {
+    checkpoint: Checkpoint;
+    now: string;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Checkpoint>> {
     const { checkpoint } = input;
     this.assertCanonical('Checkpoint', checkpoint);
+    this.assertRelatedAudit(checkpoint.workspaceId, input.auditEvent);
+    this.assertReceipt(checkpoint.workspaceId, input.receipt);
     const nowMs = timestampMs(input.now, 'checkpoint now');
     return this.coordinator.runSerialized(checkpoint.workspaceId, async () => {
+      const replay = await this.resolveReceipt(input.receipt);
+      if (replay) return replay;
       await this.assertCheckpointAuthority(checkpoint, nowMs);
-      await this.run(this.insertCheckpointStatement(checkpoint), 'append Checkpoint');
-      return clone(checkpoint);
+      const statements: D1PreparedStatementLike[] = [this.insertCheckpointStatement(checkpoint)];
+      this.pushAuditStatement(statements, input.auditEvent);
+      this.pushReceiptStatement(statements, input.receipt);
+      await this.batch(statements, 'append Checkpoint');
+      return { kind: 'committed', value: clone(checkpoint) };
     });
   }
 
@@ -729,9 +769,15 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
   async appendPermissionDecision(input: {
     decision: PermissionDecision;
     expectedPreviousDecisionId: string;
-  }): Promise<PermissionDecision> {
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<PermissionDecision>> {
     this.assertCanonical('PermissionDecision', input.decision);
+    this.assertRelatedAudit(input.decision.workspaceId, input.auditEvent);
+    this.assertReceipt(input.decision.workspaceId, input.receipt);
     return this.coordinator.runSerialized(input.decision.workspaceId, async () => {
+      const replay = await this.resolveReceipt(input.receipt);
+      if (replay) return replay;
       const head = await this.first<PermissionHeadRow>(
         `SELECT latest_decision_id, latest_sequence, latest_outcome
          FROM permission_heads
@@ -761,29 +807,44 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
         );
       }
 
-      await this.batch(
-        [
-          this.insertPermissionDecisionStatement(input.decision),
-          this.database
-            .prepare(
-              `UPDATE permission_heads
-               SET latest_decision_id = ?, latest_sequence = ?, latest_outcome = ?
-               WHERE workspace_id = ? AND request_id = ?
-                 AND latest_decision_id = ? AND latest_sequence = ?`,
-            )
-            .bind(
-              input.decision.id,
-              input.decision.sequence,
-              input.decision.outcome,
-              input.decision.workspaceId,
-              input.decision.requestId,
-              head.latest_decision_id,
-              head.latest_sequence,
-            ),
-        ],
-        'append PermissionDecision',
-      );
-      return clone(input.decision);
+      const statements: D1PreparedStatementLike[] = [
+        this.insertPermissionDecisionStatement(input.decision),
+        this.database
+          .prepare(
+            `UPDATE permission_heads
+             SET latest_decision_id = ?, latest_sequence = ?, latest_outcome = ?
+             WHERE workspace_id = ? AND request_id = ?
+               AND latest_decision_id = ? AND latest_sequence = ?`,
+          )
+          .bind(
+            input.decision.id,
+            input.decision.sequence,
+            input.decision.outcome,
+            input.decision.workspaceId,
+            input.decision.requestId,
+            head.latest_decision_id,
+            head.latest_sequence,
+          ),
+      ];
+      this.pushAuditStatement(statements, input.auditEvent);
+      this.pushReceiptStatement(statements, input.receipt);
+      await this.batch(statements, 'append PermissionDecision');
+      return { kind: 'committed', value: clone(input.decision) };
+    });
+  }
+
+  async commitCommandReceipt(
+    receipt: CommandReceiptInput,
+  ): Promise<MutationCommitResult<undefined>> {
+    this.assertReceipt(receipt.workspaceId, receipt);
+    return this.coordinator.runSerialized(receipt.workspaceId, async () => {
+      const replay = await this.resolveReceipt(receipt);
+      if (replay) return replay;
+      await this.requireWorkspace(receipt.workspaceId);
+      const statements: D1PreparedStatementLike[] = [];
+      this.pushReceiptStatement(statements, receipt);
+      await this.batch(statements, 'commit command receipt');
+      return { kind: 'committed', value: undefined };
     });
   }
 
@@ -812,6 +873,17 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
         ? {}
         : { expiresAt: new Date(row.expires_at_ms).toISOString() }),
     });
+  }
+
+  async getPermissionRequest(
+    workspaceId: string,
+    requestId: string,
+  ): Promise<PermissionRequest | undefined> {
+    return this.readRecord<PermissionRequest>(
+      `SELECT record_json FROM permission_requests WHERE workspace_id = ? AND id = ?`,
+      workspaceId,
+      requestId,
+    );
   }
 
   async loadWorkspaceState(workspaceId: string): Promise<WorkspaceStateSnapshot | undefined> {
@@ -880,12 +952,95 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     };
   }
 
-  async listTaskCheckpoints(workspaceId: string, taskId: string): Promise<Checkpoint[]> {
+  async listClaimableTasks(
+    workspaceId: string,
+    sessionId: string,
+    now: string,
+    sessionCutoff: string,
+    limit: number,
+    offset = 0,
+  ): Promise<Task[]> {
+    const nowMs = timestampMs(now, 'claimable now');
+    const cutoffMs = timestampMs(sessionCutoff, 'claimable session cutoff');
+    const session = await this.getSession(workspaceId, sessionId);
+    if (!session) throw new PersistenceError('NOT_FOUND', `Session ${sessionId} was not found.`);
+    if (
+      session.status !== 'active' ||
+      timestampMs(session.lastSeenAt, 'Session.lastSeenAt') <= cutoffMs
+    ) {
+      throw new PersistenceError('CONFLICT', `Session ${sessionId} is not active.`);
+    }
+    const agent = await this.getAgent(workspaceId, session.agentId);
+    if (!agent || agent.status !== 'active') {
+      throw new PersistenceError('CONFLICT', `Agent ${session.agentId} is not active.`);
+    }
+    return this.readRecords<Task>(
+      `SELECT t.record_json
+       FROM tasks t
+       WHERE t.workspace_id = ?
+         AND (
+           t.status = 'ready'
+           OR (
+             t.status = 'running'
+             AND NOT EXISTS (
+               SELECT 1
+               FROM leases l
+               JOIN sessions owner_session
+                 ON owner_session.workspace_id = l.workspace_id
+                AND owner_session.id = l.session_id
+               WHERE l.workspace_id = t.workspace_id
+                 AND l.task_id = t.id
+                 AND l.status = 'active'
+                 AND l.expires_at_ms > ?
+                 AND owner_session.status = 'active'
+                 AND owner_session.last_seen_at_ms > ?
+             )
+           )
+         )
+         AND NOT EXISTS (
+           SELECT 1
+           FROM task_required_capabilities trc
+           WHERE trc.workspace_id = t.workspace_id AND trc.task_id = t.id
+             AND NOT EXISTS (
+               SELECT 1
+               FROM agent_capabilities ac
+               WHERE ac.workspace_id = t.workspace_id
+                 AND ac.agent_id = ?
+                 AND ac.capability = trc.capability
+             )
+         )
+       ORDER BY t.created_at_ms, t.id
+       LIMIT ? OFFSET ?`,
+      workspaceId,
+      nowMs,
+      cutoffMs,
+      agent.id,
+      boundedLimit(limit),
+      boundedOffset(offset),
+    );
+  }
+
+  async listTaskCheckpoints(
+    workspaceId: string,
+    taskId: string,
+    limit?: number,
+    offset = 0,
+  ): Promise<Checkpoint[]> {
+    if (limit === undefined) {
+      return this.readRecords<Checkpoint>(
+        `SELECT record_json FROM checkpoints
+         WHERE workspace_id = ? AND task_id = ? ORDER BY created_at_ms, id`,
+        workspaceId,
+        taskId,
+      );
+    }
     return this.readRecords<Checkpoint>(
       `SELECT record_json FROM checkpoints
-       WHERE workspace_id = ? AND task_id = ? ORDER BY created_at_ms, id`,
+       WHERE workspace_id = ? AND task_id = ? ORDER BY created_at_ms, id LIMIT ? OFFSET ?`,
       workspaceId,
       taskId,
+      boundedLimit(limit),
+      boundedOffset(offset),
     );
   }
 
@@ -901,18 +1056,32 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
   async listPermissionDecisions(
     workspaceId: string,
     requestId: string,
+    limit?: number,
+    offset = 0,
   ): Promise<PermissionDecision[]> {
+    if (limit === undefined) {
+      return this.readRecords<PermissionDecision>(
+        `SELECT record_json FROM permission_decisions
+         WHERE workspace_id = ? AND request_id = ? ORDER BY sequence, created_at_ms, id`,
+        workspaceId,
+        requestId,
+      );
+    }
     return this.readRecords<PermissionDecision>(
       `SELECT record_json FROM permission_decisions
-       WHERE workspace_id = ? AND request_id = ? ORDER BY sequence, created_at_ms, id`,
+       WHERE workspace_id = ? AND request_id = ?
+       ORDER BY sequence, created_at_ms, id LIMIT ? OFFSET ?`,
       workspaceId,
       requestId,
+      boundedLimit(limit),
+      boundedOffset(offset),
     );
   }
 
   async listPendingHumanPermissions(
     workspaceId: string,
     limit: number,
+    offset = 0,
   ): Promise<PendingHumanPermission[]> {
     const rows = await this.all<PendingPermissionRow>(
       `SELECT pr.record_json AS request_json, pd.record_json AS decision_json
@@ -923,9 +1092,10 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
          ON pd.workspace_id = ph.workspace_id AND pd.id = ph.latest_decision_id
        WHERE ph.workspace_id = ? AND ph.latest_outcome = 'HUMAN_REQUIRED'
        ORDER BY pr.created_at_ms, pr.id
-       LIMIT ?`,
+       LIMIT ? OFFSET ?`,
       workspaceId,
       boundedLimit(limit),
+      boundedOffset(offset),
     );
     return rows.map((row) => ({
       request: parseJson<PermissionRequest>(row.request_json, 'PermissionRequest'),
@@ -957,6 +1127,50 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
       timestampMs(cutoff, 'session recovery cutoff'),
       boundedLimit(limit),
     );
+  }
+
+  private async resolveReceiptSource<T>(
+    receipt: CommandReceiptInput | undefined,
+    deferredReceipt: DeferredCommandReceiptInput<T> | undefined,
+  ): Promise<{ kind: 'replayed'; receipt: StoredCommandReceipt } | undefined> {
+    if (receipt) return this.resolveReceipt(receipt);
+    if (!deferredReceipt) return undefined;
+    const stored = await this.getCommandReceipt(
+      deferredReceipt.workspaceId,
+      deferredReceipt.commandId,
+    );
+    if (!stored) return undefined;
+    if (
+      stored.command !== deferredReceipt.command ||
+      stored.semanticFingerprint !== deferredReceipt.semanticFingerprint
+    ) {
+      throw new PersistenceError(
+        'IDEMPOTENCY_CONFLICT',
+        `Command ${deferredReceipt.commandId} was already admitted with different semantics.`,
+      );
+    }
+    return { kind: 'replayed', receipt: clone(stored) };
+  }
+
+  private materializeReceipt<T>(
+    receipt: CommandReceiptInput | undefined,
+    deferredReceipt: DeferredCommandReceiptInput<T> | undefined,
+    value: T,
+  ): CommandReceiptInput | undefined {
+    if (receipt) return receipt;
+    if (!deferredReceipt) return undefined;
+    const materialized: CommandReceiptInput = {
+      workspaceId: deferredReceipt.workspaceId,
+      commandId: deferredReceipt.commandId,
+      command: deferredReceipt.command,
+      semanticFingerprint: deferredReceipt.semanticFingerprint,
+      outcomeKind: deferredReceipt.outcomeKind,
+      responseSnapshot: deferredReceipt.buildResponseSnapshot(clone(value)),
+      createdAt: deferredReceipt.createdAt,
+      ...(deferredReceipt.expiresAt === undefined ? {} : { expiresAt: deferredReceipt.expiresAt }),
+    };
+    this.assertReceipt(materialized.workspaceId, materialized);
+    return materialized;
   }
 
   private async resolveReceipt(
@@ -1097,6 +1311,29 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
       'CommandReceipt.responseSnapshot',
       MAX_RECEIPT_SNAPSHOT_BYTES,
     );
+  }
+
+  private assertDeferredReceipt<T>(
+    workspaceId: string,
+    receipt: DeferredCommandReceiptInput<T> | undefined,
+  ): void {
+    if (!receipt) return;
+    if (receipt.workspaceId !== workspaceId) {
+      throw new PersistenceError(
+        'INVALID_RECORD',
+        'Deferred receipt Workspace does not match mutation.',
+      );
+    }
+    if (!receipt.commandId || !receipt.command || !receipt.semanticFingerprint) {
+      throw new PersistenceError(
+        'INVALID_RECORD',
+        'Deferred receipt identity fields must be non-empty.',
+      );
+    }
+    timestampMs(receipt.createdAt, 'DeferredCommandReceipt.createdAt');
+    if (receipt.expiresAt !== undefined) {
+      timestampMs(receipt.expiresAt, 'DeferredCommandReceipt.expiresAt');
+    }
   }
 
   private pushReceiptStatement(
@@ -1253,14 +1490,14 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     return workspace;
   }
 
-  private async getWorkspace(workspaceId: string): Promise<Workspace | undefined> {
+  async getWorkspace(workspaceId: string): Promise<Workspace | undefined> {
     return this.readRecord<Workspace>(
       `SELECT record_json FROM workspaces WHERE id = ?`,
       workspaceId,
     );
   }
 
-  private async getGoal(workspaceId: string, goalId: string): Promise<Goal | undefined> {
+  async getGoal(workspaceId: string, goalId: string): Promise<Goal | undefined> {
     return this.readRecord<Goal>(
       `SELECT record_json FROM goals WHERE workspace_id = ? AND id = ?`,
       workspaceId,
@@ -1268,7 +1505,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     );
   }
 
-  private async getTask(workspaceId: string, taskId: string): Promise<Task | undefined> {
+  async getTask(workspaceId: string, taskId: string): Promise<Task | undefined> {
     return this.readRecord<Task>(
       `SELECT record_json FROM tasks WHERE workspace_id = ? AND id = ?`,
       workspaceId,
@@ -1276,7 +1513,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     );
   }
 
-  private async getAgent(workspaceId: string, agentId: string): Promise<Agent | undefined> {
+  async getAgent(workspaceId: string, agentId: string): Promise<Agent | undefined> {
     return this.readRecord<Agent>(
       `SELECT record_json FROM agents WHERE workspace_id = ? AND id = ?`,
       workspaceId,
@@ -1284,7 +1521,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     );
   }
 
-  private async getSession(workspaceId: string, sessionId: string): Promise<Session | undefined> {
+  async getSession(workspaceId: string, sessionId: string): Promise<Session | undefined> {
     return this.readRecord<Session>(
       `SELECT record_json FROM sessions WHERE workspace_id = ? AND id = ?`,
       workspaceId,
@@ -1292,7 +1529,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     );
   }
 
-  private async getLease(workspaceId: string, leaseId: string): Promise<Lease | undefined> {
+  async getLease(workspaceId: string, leaseId: string): Promise<Lease | undefined> {
     return this.readRecord<Lease>(
       `SELECT record_json FROM leases WHERE workspace_id = ? AND id = ?`,
       workspaceId,
@@ -1421,6 +1658,16 @@ function boundedLimit(limit: number): number {
     throw new PersistenceError('INVALID_RECORD', 'Query limit must be a positive integer.');
   }
   return Math.min(limit, 1000);
+}
+
+function boundedOffset(offset: number): number {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000) {
+    throw new PersistenceError(
+      'INVALID_RECORD',
+      'Query offset must be a bounded non-negative integer.',
+    );
+  }
+  return offset;
 }
 
 function changes(result: D1ResultLike): number {

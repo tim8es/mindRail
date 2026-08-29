@@ -72,6 +72,70 @@ export class InMemoryPermissionService {
     this.assertExecutionAuthority = options.assertExecutionAuthority;
   }
 
+  restoreState(requests: PermissionRequest[], decisions: PermissionDecision[]): void {
+    if (this.requests.size > 0 || this.decisionsByRequest.size > 0) {
+      throw new RuntimeError('CONFLICT', 'Permission service state is already initialized.');
+    }
+
+    for (const request of requests) {
+      this.assertCanonical('PermissionRequest', request);
+      if (this.requests.has(request.id)) {
+        throw new RuntimeError('CONFLICT', `PermissionRequest ${request.id} is duplicated.`);
+      }
+      this.requests.set(request.id, clone(request));
+      this.decisionsByRequest.set(request.id, []);
+    }
+
+    const decisionIds = new Set<string>();
+    for (const decision of decisions) {
+      this.assertCanonical('PermissionDecision', decision);
+      if (decisionIds.has(decision.id)) {
+        throw new RuntimeError('CONFLICT', `PermissionDecision ${decision.id} is duplicated.`);
+      }
+      decisionIds.add(decision.id);
+      const request = this.requests.get(decision.requestId);
+      if (!request || request.workspaceId !== decision.workspaceId) {
+        throw new RuntimeError(
+          'CONFLICT',
+          `PermissionDecision ${decision.id} does not belong to a restored request.`,
+        );
+      }
+      this.decisionsByRequest.get(request.id)!.push(clone(decision));
+    }
+
+    for (const [requestId, chain] of this.decisionsByRequest) {
+      chain.sort(
+        (left, right) => left.sequence - right.sequence || left.id.localeCompare(right.id),
+      );
+      if (chain.length === 0) {
+        throw new RuntimeError('CONFLICT', `PermissionRequest ${requestId} has no decision.`);
+      }
+      for (let index = 0; index < chain.length; index += 1) {
+        const current = chain[index]!;
+        if (current.sequence !== index + 1) {
+          throw new RuntimeError(
+            'CONFLICT',
+            `PermissionRequest ${requestId} has a broken decision sequence.`,
+          );
+        }
+        const previous = chain[index - 1];
+        if (previous === undefined) {
+          if (current.supersedesDecisionId !== undefined) {
+            throw new RuntimeError(
+              'CONFLICT',
+              `PermissionRequest ${requestId} has an invalid first decision.`,
+            );
+          }
+        } else if (current.supersedesDecisionId !== previous.id) {
+          throw new RuntimeError(
+            'CONFLICT',
+            `PermissionRequest ${requestId} has a broken supersession chain.`,
+          );
+        }
+      }
+    }
+  }
+
   requestPermission(input: RequestPermissionInput): RequestPermissionResult {
     this.assertExecutionAuthority(input);
 
