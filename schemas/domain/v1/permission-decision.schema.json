@@ -73,6 +73,23 @@
         },
         "not": { "required": ["policyRef"] }
       }
+    },
+    {
+      "if": {
+        "properties": { "sequence": { "const": 1 } },
+        "required": ["sequence"]
+      },
+      "then": {
+        "properties": { "supersedesDecisionId": false }
+      },
+      "else": {
+        "required": ["supersedesDecisionId"],
+        "properties": {
+          "supersedesDecisionId": {
+            "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId"
+          }
+        }
+      }
     }
   ]
 }

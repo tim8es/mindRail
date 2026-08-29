@@ -3,8 +3,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type Ajv from 'ajv';
-import type { AnySchemaObject, Options } from 'ajv';
+import type { Ajv, AnySchemaObject, Options } from 'ajv';
 import type { FormatsPlugin } from 'ajv-formats';
 
 const require = createRequire(import.meta.url);
