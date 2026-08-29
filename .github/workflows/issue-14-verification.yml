@@ -36,13 +36,10 @@ jobs:
 
           path = Path('src/runtime/in-memory-control-plane.ts')
           source = path.read_text()
-          before = '''  execute(command: CancelGoalCommand): ProtocolResponse<CancelGoalResult>;
-          execute(command: ProtocolCommand): ProtocolResponse {'''
-          after = '''  execute(command: CancelGoalCommand): ProtocolResponse<CancelGoalResult>;
-          execute(command: ProtocolCommand): ProtocolResponse;
-          execute(command: ProtocolCommand): ProtocolResponse {'''
-          if before not in source:
-              raise SystemExit('expected execute overload boundary not found')
+          before = '  execute(command: ProtocolCommand): ProtocolResponse {'
+          after = '  execute(command: ProtocolCommand): ProtocolResponse;\n  execute(command: ProtocolCommand): ProtocolResponse {'
+          if source.count(before) != 1:
+              raise SystemExit(f'expected one execute implementation boundary, found {source.count(before)}')
           path.write_text(source.replace(before, after, 1))
           PY
           pnpm exec prettier --write src/runtime/in-memory-control-plane.ts
