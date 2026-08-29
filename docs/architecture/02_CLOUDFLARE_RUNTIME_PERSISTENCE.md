@@ -287,35 +287,35 @@ Indexes are implementation choices and must be validated against actual D1 query
 
 ## 16. Failure modes
 
-| Failure | Required behavior |
-| --- | --- |
-| Workspace DO evicted/restarted | lose only memory queue/cache; reconstruct truth from D1 |
-| two claims race | at most one new Lease commits |
-| stale executor submits old fence | zero authoritative mutation; return stale-fence/lease error |
-| Lease expires disconnected | authority ends at timestamp; alarm/lazy reconciliation materializes later |
-| alarm fires more than once | expiry transaction remains idempotent |
-| D1 transaction fails | roll back mutation/audit/receipt; never report success |
-| D1 commit succeeds, response lost | exact retry resolves from command receipt immutable snapshot |
-| same commandId reused for different command/intent | `IDEMPOTENCY_CONFLICT` |
-| D1 commit succeeds, alarm scheduling fails | keep truth; retry/reconcile scheduling later |
-| GitHub projection fails | D1 remains canonical; retry projection independently |
-| permission head corrupt | fail closed and repair projection from immutable decisions |
-| coordinator memory interleaves around await | local promise queue reduces conflicts; D1 constraints remain final guard |
+| Failure                                            | Required behavior                                                         |
+| -------------------------------------------------- | ------------------------------------------------------------------------- |
+| Workspace DO evicted/restarted                     | lose only memory queue/cache; reconstruct truth from D1                   |
+| two claims race                                    | at most one new Lease commits                                             |
+| stale executor submits old fence                   | zero authoritative mutation; return stale-fence/lease error               |
+| Lease expires disconnected                         | authority ends at timestamp; alarm/lazy reconciliation materializes later |
+| alarm fires more than once                         | expiry transaction remains idempotent                                     |
+| D1 transaction fails                               | roll back mutation/audit/receipt; never report success                    |
+| D1 commit succeeds, response lost                  | exact retry resolves from command receipt immutable snapshot              |
+| same commandId reused for different command/intent | `IDEMPOTENCY_CONFLICT`                                                    |
+| D1 commit succeeds, alarm scheduling fails         | keep truth; retry/reconcile scheduling later                              |
+| GitHub projection fails                            | D1 remains canonical; retry projection independently                      |
+| permission head corrupt                            | fail closed and repair projection from immutable decisions                |
+| coordinator memory interleaves around await        | local promise queue reduces conflicts; D1 constraints remain final guard  |
 
 ## 17. Transaction ownership matrix
 
-| Operation | Coordinator | D1 atomic boundary |
-| --- | --- | --- |
-| Create Goal/Task/Agent/Session | Workspace DO for Workspace-scoped creation | record + normalized children + audit + receipt |
-| Heartbeat Session | Workspace DO | revision-conditional Session update + receipt |
-| Claim Task | Workspace DO | stale Lease close + fence grant + Lease + Task transition + audit + receipt |
-| Renew/Release Lease | Workspace DO | Lease authority/revision update + audit + receipt |
-| Checkpoint | Workspace DO | authority-conditional append + audit/receipt as required |
-| Complete/Fail/Block Task | Workspace DO | checkpoint + Task + Lease authority removal + dependency/Goal effects + audit + receipt |
-| Retry/Resume/Cancel Task | Workspace DO | Task conditional update + Lease action if any + audit + receipt |
-| Cancel Goal | Workspace DO | Goal + affected Tasks/Leases + audit + receipt as one logical Goal operation |
-| Permission request | Workspace DO | request + initial decision + head + audit + receipt |
-| Human decision | Workspace DO | immutable decision + head CAS + audit + receipt |
+| Operation                      | Coordinator                                | D1 atomic boundary                                                                      |
+| ------------------------------ | ------------------------------------------ | --------------------------------------------------------------------------------------- |
+| Create Goal/Task/Agent/Session | Workspace DO for Workspace-scoped creation | record + normalized children + audit + receipt                                          |
+| Heartbeat Session              | Workspace DO                               | revision-conditional Session update + receipt                                           |
+| Claim Task                     | Workspace DO                               | stale Lease close + fence grant + Lease + Task transition + audit + receipt             |
+| Renew/Release Lease            | Workspace DO                               | Lease authority/revision update + audit + receipt                                       |
+| Checkpoint                     | Workspace DO                               | authority-conditional append + audit/receipt as required                                |
+| Complete/Fail/Block Task       | Workspace DO                               | checkpoint + Task + Lease authority removal + dependency/Goal effects + audit + receipt |
+| Retry/Resume/Cancel Task       | Workspace DO                               | Task conditional update + Lease action if any + audit + receipt                         |
+| Cancel Goal                    | Workspace DO                               | Goal + affected Tasks/Leases + audit + receipt as one logical Goal operation            |
+| Permission request             | Workspace DO                               | request + initial decision + head + audit + receipt                                     |
+| Human decision                 | Workspace DO                               | immutable decision + head CAS + audit + receipt                                         |
 
 ## 18. Migrations
 
