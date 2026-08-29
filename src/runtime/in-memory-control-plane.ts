@@ -29,6 +29,7 @@ import {
   type ProtocolResponse,
   type ProtocolSuccess,
   type RecordCheckpointCommand,
+  type ReleaseLeaseCommand,
   type RenewLeaseCommand,
   type ResumeTaskCommand,
   type RetryTaskCommand,
@@ -259,6 +260,7 @@ export class InMemoryControlPlane {
   execute(command: CreateTaskCommand): ProtocolResponse<Task>;
   execute(command: ClaimTaskCommand): ProtocolResponse<ClaimTaskResult>;
   execute(command: RenewLeaseCommand): ProtocolResponse<Lease>;
+  execute(command: ReleaseLeaseCommand): ProtocolResponse<Lease>;
   execute(command: RecordCheckpointCommand): ProtocolResponse<Checkpoint>;
   execute(command: CompleteTaskCommand): ProtocolResponse<CompleteTaskResult>;
   execute(command: FailTaskCommand): ProtocolResponse<FailTaskResult>;
@@ -896,6 +898,15 @@ export class InMemoryControlPlane {
         });
       case 'RenewLease':
         return this.renewLease({
+          workspaceId: command.workspaceId,
+          taskId: command.taskId,
+          sessionId: command.sessionId,
+          leaseId: command.leaseId,
+          fencingToken: command.fencingToken,
+          expectedLeaseRevision: command.expectedLeaseRevision,
+        });
+      case 'ReleaseLease':
+        return this.releaseLease({
           workspaceId: command.workspaceId,
           taskId: command.taskId,
           sessionId: command.sessionId,
