@@ -22,10 +22,12 @@ The project is in `0.x` development and does not yet have a public product relea
 - Cloudflare D1 + Workspace Durable Object reference persistence design, kept outside canonical domain/protocol contracts.
 - Deterministic in-memory local control-plane runtime for the first executable Goal/Task lifecycle.
 - Agent/Session execution identity, Task claim/release/recovery, monotonic fencing, Checkpoints, completion/failure, dependency release, and automatic Goal success.
+- Explicit configurable Session timeout enforcement with stale-Session expiry, Lease revocation, and fenced Task recovery.
 - Explicit Task retry/cancellation and Goal cancellation with effective-Lease revocation and stale-executor rejection.
 - Transport-neutral in-memory protocol dispatcher for the implemented lifecycle commands.
+- Structural protocol pre-admission validation for protocol version/discriminator, EntityIds, ActorRef, revisions/fencing values, and command-specific shapes before fingerprinting or mutation.
 - In-memory `(workspaceId, commandId)` idempotency receipts with semantic fingerprinting, immutable replay snapshots, tracing-field exclusion, and `IDEMPOTENCY_CONFLICT` handling.
-- Runtime TDD coverage for the end-to-end loop, fencing/recovery, idempotency, retry, Task cancellation, Goal cancellation, stale completion rejection, controller actor authority, and canonical-schema admission.
+- Runtime TDD coverage for the end-to-end loop, fencing/recovery, idempotency, retry, Task cancellation, Goal cancellation, stale completion rejection, controller actor authority, canonical-schema admission, pre-admission protocol errors, and stale Session recovery.
 - A third-party-free `CanonicalDomainValidator` core seam; reference tests compose it with the actual strict Draft 2020-12 schemas using existing dev-only Ajv.
 
 ### Changed
@@ -40,19 +42,23 @@ The project is in `0.x` development and does not yet have a public product relea
 - Root runtime code now declares `@mindrail/contracts` as a `workspace:*` development dependency so strict root TypeScript compilation consumes the canonical contract package through normal workspace resolution rather than compiler path aliases.
 - Same-Session semantic duplicate claims now return the existing Lease before the optimistic Task-revision gate, so transport-independent duplicate claim semantics do not mint a second fence.
 - Idempotent replay preserves the stored result/error snapshot while reflecting the current retry correlation id; tracing-only correlation/causation fields remain outside semantic fingerprints.
+- Pre-admission failures no longer reserve command receipts. Unknown Workspace returns a protocol `NOT_FOUND` envelope instead of escaping from `execute()`, and malformed command envelopes return `INVALID_INPUT` before fingerprinting or dispatch.
 - `RetryTask`, `CancelTask`, and `CancelGoal` now fail closed for agent actors with `ACTOR_NOT_AUTHORIZED`; human/system actors retain controller authority.
 - Runtime admission now validates Workspace, Agent, Session, Goal, Task, Lease, and Checkpoint records before insertion, plus external `Reason` values before fail/cancel mutation. Rejected Lease admission no longer advances the fencing counter.
+- Effective Lease materialization now includes Session liveness; stale Sessions are expired and their active Leases revoked using authoritative server time.
 
 ### Verification
 
 - Domain-contract verification established deterministic generated bindings, strict schema validation, generated-drift detection, and the canonical type package before runtime implementation began.
-- Runtime behavior was developed through focused RED → GREEN GitHub Actions cycles for the initial lifecycle, Lease/fencing recovery, protocol idempotency, retry/cancellation controls, review regressions, controller actor authority, and canonical-schema admission.
+- Runtime behavior was developed through focused RED → GREEN GitHub Actions cycles for the initial lifecycle, Lease/fencing recovery, protocol idempotency, retry/cancellation controls, review regressions, controller actor authority, canonical-schema admission, protocol pre-admission, and Session liveness.
 - Full GitHub Actions verification run `33254737970` on commit `57491f9b153a8163b927b0a811edabe4083068cb` passed `pnpm install --frozen-lockfile`, formatting, lint, strict root/contracts TypeScript checks, `contracts:check-generated`, the full Vitest suite, `pnpm check`, and `pnpm test:coverage`.
 - Canonical-admission RED run `33255899914` proved that invalid Goal bounds, cancellation Reason, and Checkpoint Evidence were accepted before the fix; all three focused regressions failed for the expected missing-admission behavior.
 - Canonical-admission GREEN run `33256111682` passed the three focused regressions, full `pnpm check`, and `pnpm test:coverage`, reporting **9/9 test files and 26/26 tests passing**.
 - V8 coverage for that GREEN run reported 90.22% statements, 72.63% branches, 98.33% functions, and 90.17% lines overall; `src/runtime` reported 89.22% statements and 89.16% lines. No repository-wide coverage threshold is claimed.
+- Pre-admission/session hardening RED was captured by permanent Quality run `33256699081`: all prior tests passed while exactly the three new regressions failed for unknown-Workspace exception escape, malformed-envelope admission, and stale-Session authority.
+- Pre-admission/session hardening GREEN run `33256869136` passed the focused regressions, full `pnpm check`, and `pnpm test:coverage`, then removed its one-time workflow.
 - Frozen installation resolves `@mindrail/contracts 0.0.0 <- packages/contracts`, confirming the root runtime uses the workspace contract package.
-- No new third-party runtime dependency was introduced for schema admission; Ajv remains existing dev/test tooling.
+- No new third-party runtime dependency was introduced for schema admission or protocol pre-admission; Ajv remains existing dev/test tooling.
 
 ### Known limitations
 
@@ -60,6 +66,7 @@ The project is in `0.x` development and does not yet have a public product relea
 - The current reference runtime is in-memory and single-process; runtime state and command receipts do not survive restart.
 - The canonical validator is an injected core boundary; deployed/reference production composition still needs to wire it to the canonical schemas.
 - The executable protocol dispatcher covers the first lifecycle subset, not every ADR-0005 command yet.
-- Session heartbeat/end, Lease renewal, block/resume, permission request/decision execution, AuditEvent persistence, and durable restart recovery remain future runtime work.
+- Session timeout is enforced, but public Session heartbeat/end commands are not implemented yet, so a real long-lived client cannot extend Session liveness through the protocol in this slice.
+- Lease renewal, block/resume, permission request/decision execution, AuditEvent persistence, and durable restart recovery remain future runtime work.
 - MindRail does not yet expose a deployed HTTP/MCP control-plane service, D1/Durable Objects runtime, GitHub integration, or real Codex/ChatGPT agent integration.
 - MindRail-specific BUSL parameters and external-contribution licensing mechanics still require professional legal review before material reliance.
