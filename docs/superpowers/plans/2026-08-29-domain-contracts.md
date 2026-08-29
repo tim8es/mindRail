@@ -828,6 +828,26 @@ Reject before merge if the diff contains:
 
 Commit message: `docs: reconcile verified domain contracts`
 
+## Finalization evidence — 2026-08-29
+
+The implemented slice was reconciled against current repository state rather than the original plan summary. Executed GitHub Actions verification run `33251135323` on branch commit `a7d13afa265589d91f0754f98c19301482bfffe9` established:
+
+- `pnpm install --frozen-lockfile` PASS; pnpm reported 188 lockfile entries passing supply-chain policy checks;
+- `pnpm format:check` PASS;
+- `pnpm lint` PASS;
+- `pnpm typecheck` PASS;
+- `pnpm contracts:check-generated` PASS;
+- `pnpm test` PASS with 5/5 test files and 10/10 tests;
+- `pnpm check` PASS;
+- `pnpm test:coverage` PASS with 100% statements/branches/functions/lines for files instrumented by the current suite;
+- `@mindrail/contracts` has zero runtime dependencies and contract schema/generation tooling is root dev-only;
+- all 10 v1 top-level entity schemas set `additionalProperties: false`;
+- an intentional stale edit to generated `workspace.ts` caused `contracts:check-generated` to fail with `Generated contracts are stale: workspace.ts`; restoration made the check pass again and left `git diff --exit-code` clean.
+
+Root-cause verification also showed that Ajv CommonJS interop needed an explicit `createRequire` type boundary under NodeNext. Removing `skipLibCheck` then exposed a TypeScript 6 incompatibility only in `@apidevtools/json-schema-ref-parser@11.9.3` declarations, so the setting remains limited to third-party declaration checking rather than hiding first-party errors.
+
+The permanent read-only `Quality` workflow is re-run on the eventual final documentation HEAD; that final run id is recorded in PR #4 rather than embedded here because adding it to this file would itself create a new HEAD.
+
 ## Exit Condition
 
 The Domain Contracts slice is complete only when all 11 canonical schemas compile under strict Draft 2020-12 validation, positive/negative fixture tests pass, generated TypeScript is reproducible and drift-checked, the full repository quality gate passes on the final head, and current-state documentation explicitly leaves cross-record orchestration behavior to the later runtime slice.

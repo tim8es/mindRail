@@ -1,8 +1,8 @@
 # MindRail v1 Domain Contracts — Design Specification
 
-- **Status:** Written review pending
+- **Status:** Approved / implemented
 - **Date:** 2026-08-29
-- **Depends on:** ADR-0001, proposed ADR-0003
+- **Depends on:** ADR-0001, ADR-0003
 - **Scope:** Domain vocabulary and executable contract artifacts only. No network API, database, state-machine implementation, cloud resources, or agent integration.
 
 ## 1. Objective
