@@ -34,3 +34,8 @@ jobs:
 
       - name: Focused runtime lifecycle tests
         run: pnpm test test/runtime/control-plane-runtime-surface.test.ts
+
+      - name: Show Prettier diff
+        run: |
+          pnpm exec prettier --write src/runtime/in-memory-control-plane.ts test/runtime/control-plane-runtime-surface.test.ts
+          git diff -- src/runtime/in-memory-control-plane.ts test/runtime/control-plane-runtime-surface.test.ts
