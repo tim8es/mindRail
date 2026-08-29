@@ -37,7 +37,7 @@ jobs:
         run: pnpm test:coverage
       - name: Commit verified fix
         run: |
-          git rm .github/workflows/apply-release-lease-once.yml scripts/tmp-release-lease-patch.mjs
+          git rm -f .github/workflows/apply-release-lease-once.yml scripts/tmp-release-lease-patch.mjs
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/runtime/in-memory-control-plane.ts src/runtime/protocol.ts src/runtime/protocol-validation.ts test/runtime/control-plane-runtime-surface-review.test.ts
