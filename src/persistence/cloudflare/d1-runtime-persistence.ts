@@ -25,6 +25,8 @@ import {
   type PersistenceDomainTarget,
   type PersistenceDomainValidator,
   type StoredCommandReceipt,
+  type TaskOutcomeCommitInput,
+  type TaskOutcomeCommitValue,
   type WorkspaceMutationCoordinator,
   type WorkspaceStateSnapshot,
 } from '../ports.ts';
@@ -936,6 +938,219 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
           lease: clone(input.lease),
           checkpoint: clone(input.checkpoint),
           ...(succeededGoal === undefined ? {} : { goal: clone(succeededGoal) }),
+        },
+      };
+    });
+  }
+
+  async failTask(
+    input: TaskOutcomeCommitInput,
+  ): Promise<MutationCommitResult<TaskOutcomeCommitValue>> {
+    return this.commitTaskOutcome(input, 'failed', 'result', 'fail Task');
+  }
+
+  async blockTask(
+    input: TaskOutcomeCommitInput,
+  ): Promise<MutationCommitResult<TaskOutcomeCommitValue>> {
+    return this.commitTaskOutcome(input, 'blocked', 'blocked', 'block Task');
+  }
+
+  async resumeTask(input: {
+    task: Task;
+    expectedRevision: number;
+    receipt?: CommandReceiptInput;
+    auditEvent?: AuditEvent;
+  }): Promise<MutationCommitResult<Task>> {
+    const { task } = input;
+    this.assertCanonical('Task', task);
+    this.assertRelatedAudit(task.workspaceId, input.auditEvent);
+    this.assertReceipt(task.workspaceId, input.receipt);
+
+    return this.coordinator.runSerialized(task.workspaceId, async () => {
+      const replay = await this.resolveReceipt(input.receipt);
+      if (replay) return replay;
+      const current = await this.getTask(task.workspaceId, task.id);
+      if (!current) throw new PersistenceError('NOT_FOUND', `Task ${task.id} was not found.`);
+      if (current.revision !== input.expectedRevision) {
+        throw new PersistenceError(
+          'REVISION_MISMATCH',
+          `Task ${task.id} revision ${current.revision} does not match ${input.expectedRevision}.`,
+        );
+      }
+      if (current.status !== 'blocked') {
+        throw new PersistenceError(
+          'INVALID_STATE_TRANSITION',
+          `Task ${task.id} cannot resume from ${current.status}.`,
+        );
+      }
+
+      let expectedStatus: Task['status'] = 'ready';
+      for (const dependencyTaskId of current.dependencyTaskIds) {
+        const dependency = await this.getTask(task.workspaceId, dependencyTaskId);
+        if (!dependency || dependency.goalId !== current.goalId) {
+          throw new PersistenceError(
+            'INTEGRITY_ERROR',
+            `Task ${task.id} dependency ${dependencyTaskId} is invalid.`,
+          );
+        }
+        if (dependency.status !== 'succeeded') expectedStatus = 'pending';
+      }
+
+      if (
+        task.workspaceId !== current.workspaceId ||
+        task.id !== current.id ||
+        task.goalId !== current.goalId ||
+        task.createdAt !== current.createdAt ||
+        task.revision !== input.expectedRevision + 1 ||
+        task.status !== expectedStatus ||
+        task.statusReason !== undefined ||
+        JSON.stringify(task.requiredCapabilities) !==
+          JSON.stringify(current.requiredCapabilities) ||
+        JSON.stringify(task.dependencyTaskIds) !== JSON.stringify(current.dependencyTaskIds)
+      ) {
+        throw new PersistenceError('INVALID_RECORD', 'ResumeTask replacement is invalid.');
+      }
+
+      const statements: D1PreparedStatementLike[] = [
+        this.database
+          .prepare(
+            `UPDATE tasks
+             SET revision = ?, status = ?, updated_at_ms = ?, record_json = ?
+             WHERE workspace_id = ? AND id = ? AND revision = ? AND status = 'blocked'`,
+          )
+          .bind(
+            task.revision,
+            task.status,
+            timestampMs(task.updatedAt, 'Task.updatedAt'),
+            serializeJson(task, 'Task'),
+            task.workspaceId,
+            task.id,
+            input.expectedRevision,
+          ),
+      ];
+      this.pushAuditStatement(statements, input.auditEvent);
+      this.pushReceiptStatement(statements, input.receipt);
+      await this.batch(statements, 'resume Task');
+      return { kind: 'committed', value: clone(task) };
+    });
+  }
+
+  private async commitTaskOutcome(
+    input: TaskOutcomeCommitInput,
+    expectedTaskStatus: 'failed' | 'blocked',
+    expectedCheckpointKind: 'result' | 'blocked',
+    operation: string,
+  ): Promise<MutationCommitResult<TaskOutcomeCommitValue>> {
+    this.assertCanonical('Task', input.task);
+    this.assertCanonical('Lease', input.lease);
+    this.assertCanonical('Checkpoint', input.checkpoint);
+    this.assertRelatedAudit(input.workspaceId, input.auditEvent);
+    this.assertReceipt(input.workspaceId, input.receipt);
+    const nowMs = timestampMs(input.now, `${operation} now`);
+
+    return this.coordinator.runSerialized(input.workspaceId, async () => {
+      const replay = await this.resolveReceipt(input.receipt);
+      if (replay) return replay;
+      const currentTask = await this.getTask(input.workspaceId, input.task.id);
+      if (!currentTask) {
+        throw new PersistenceError('NOT_FOUND', `Task ${input.task.id} was not found.`);
+      }
+      if (currentTask.revision !== input.expectedTaskRevision) {
+        throw new PersistenceError(
+          'REVISION_MISMATCH',
+          `Task ${currentTask.id} revision ${currentTask.revision} does not match ${input.expectedTaskRevision}.`,
+        );
+      }
+      const currentLease = await this.getLease(input.workspaceId, input.lease.id);
+      const currentSession = currentLease
+        ? await this.getSession(input.workspaceId, currentLease.sessionId)
+        : undefined;
+      const effectiveLease = await this.getActiveLease(input.workspaceId, input.task.id);
+      if (
+        !currentLease ||
+        !currentSession ||
+        currentSession.status !== 'active' ||
+        !effectiveLease ||
+        effectiveLease.id !== currentLease.id ||
+        effectiveLease.fencingToken !== currentLease.fencingToken ||
+        currentLease.status !== 'active' ||
+        timestampMs(currentLease.expiresAt, 'Lease.expiresAt') <= nowMs
+      ) {
+        throw new PersistenceError('STALE_AUTHORITY', 'Task outcome authority is stale.');
+      }
+
+      const checkpoint = input.checkpoint;
+      if (
+        currentTask.status !== 'running' ||
+        input.task.workspaceId !== input.workspaceId ||
+        input.task.id !== currentTask.id ||
+        input.task.goalId !== currentTask.goalId ||
+        input.task.createdAt !== currentTask.createdAt ||
+        input.task.status !== expectedTaskStatus ||
+        input.task.revision !== input.expectedTaskRevision + 1 ||
+        input.lease.workspaceId !== input.workspaceId ||
+        input.lease.id !== currentLease.id ||
+        input.lease.taskId !== currentTask.id ||
+        input.lease.sessionId !== currentLease.sessionId ||
+        input.lease.fencingToken !== currentLease.fencingToken ||
+        input.lease.createdAt !== currentLease.createdAt ||
+        input.lease.expiresAt !== currentLease.expiresAt ||
+        input.lease.status !== 'released' ||
+        input.lease.revision !== currentLease.revision + 1 ||
+        checkpoint.workspaceId !== input.workspaceId ||
+        checkpoint.taskId !== currentTask.id ||
+        checkpoint.sessionId !== currentLease.sessionId ||
+        checkpoint.leaseId !== currentLease.id ||
+        checkpoint.fencingToken !== currentLease.fencingToken ||
+        checkpoint.kind !== expectedCheckpointKind
+      ) {
+        throw new PersistenceError('INVALID_RECORD', 'Task outcome replacement is invalid.');
+      }
+
+      const statements: D1PreparedStatementLike[] = [
+        this.insertCheckpointStatement(checkpoint),
+        this.database
+          .prepare(
+            `UPDATE tasks
+             SET revision = ?, status = ?, updated_at_ms = ?, record_json = ?
+             WHERE workspace_id = ? AND id = ? AND revision = ? AND status = 'running'`,
+          )
+          .bind(
+            input.task.revision,
+            input.task.status,
+            timestampMs(input.task.updatedAt, 'Task.updatedAt'),
+            serializeJson(input.task, 'Task'),
+            input.workspaceId,
+            input.task.id,
+            input.expectedTaskRevision,
+          ),
+        this.database
+          .prepare(
+            `UPDATE leases
+             SET revision = ?, status = ?, updated_at_ms = ?, record_json = ?
+             WHERE workspace_id = ? AND id = ? AND revision = ? AND status = 'active'
+               AND fencing_token = ?`,
+          )
+          .bind(
+            input.lease.revision,
+            input.lease.status,
+            timestampMs(input.lease.updatedAt, 'Lease.updatedAt'),
+            serializeJson(input.lease, 'Lease'),
+            input.workspaceId,
+            input.lease.id,
+            currentLease.revision,
+            currentLease.fencingToken,
+          ),
+      ];
+      this.pushAuditStatement(statements, input.auditEvent);
+      this.pushReceiptStatement(statements, input.receipt);
+      await this.batch(statements, operation);
+      return {
+        kind: 'committed',
+        value: {
+          task: clone(input.task),
+          lease: clone(input.lease),
+          checkpoint: clone(checkpoint),
         },
       };
     });

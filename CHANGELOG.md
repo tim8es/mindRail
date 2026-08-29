@@ -33,6 +33,7 @@ The project is in `0.x` development and does not yet have a public product relea
 - In-memory application dispatcher for all ADR-0005 commands plus bounded queries.
 - HTTP/application end-to-end regression covering `RegisterAgent -> StartSession -> CreateGoal -> CreateTask -> ClaimTask -> RecordCheckpoint -> RequestPermission(repository.write) -> RecordPermissionDecision(ALLOW) -> CompleteTask`, followed by HTTP verification of final Task, Goal, Lease, and checkpoint state.
 - Durable HTTP end-to-end regressions covering restart after claim, restart after `HUMAN_REQUIRED`, response-loss receipt replay after application replacement, competing independent application claims, and fencing advancement after Lease expiry/recovery against the SQLite D1-like persistence harness.
+- Durable `FailTask`, `BlockTask`, and `ResumeTask` composition with atomic Task/Lease/Checkpoint/receipt persistence where applicable, restart-safe immutable replay, persisted blocked/failed evidence, controller-authorized resume, and D1-like fault-injection rollback coverage.
 
 ### Changed
 
@@ -56,6 +57,7 @@ The project is in `0.x` development and does not yet have a public product relea
 - Durable `ListClaimableTasks` is advisory only; it exposes capability-compatible `ready` Tasks and `running` recovery Tasks whose prior Lease/Session authority is no longer effective at authoritative server time, while Task execution authority is still acquired and revalidated atomically by `ClaimTask`.
 - Admitted terminal semantic failures in the supported durable command loop now persist immutable `outcomeKind: error` command receipts and replay after restart instead of re-executing the command.
 - Durable Session/Lease liveness composition now supports `HeartbeatSession`, `EndSession`, `RenewLease`, and `ReleaseLease` with atomic mutation receipts, restart-safe replay, stable renewal fencing, and recoverable released/revoked execution authority.
+- Durable task-outcome persistence now revalidates execution/revision authority at commit time and stores failure/block transitions and their released Lease plus Checkpoint in one batch; `ResumeTask` recomputes dependency readiness and removes the blocking reason without granting a Lease.
 
 ### Verification
 
@@ -73,6 +75,7 @@ The project is in `0.x` development and does not yet have a public product relea
 - Durable query semantic RED run `33274570145` failed the four new query regressions because the durable dispatcher still returned `UNSUPPORTED_OPERATION`, while 115 existing tests passed. Task 4 integration run `33274741762` then passed focused durable-query/persistence verification, full `pnpm check`, and coverage.
 - Permanent Quality run `33274903333` passed the restart-safe durable HTTP E2E tree with **29/29 test files and 123/123 tests**, plus `pnpm test:coverage`. Overall coverage reported 85.3% statements, 73.3% branches, 96.15% functions, and 86.95% lines.
 - Final correctness-review RED run `33275182068` failed exactly the two new terminal-error-receipt and recovery-discovery regressions while the previous 123 tests passed. Review-fix run `33275312677` then passed focused regressions, full `pnpm check`, and coverage with **30/30 test files and 125/125 tests**; overall coverage was 85.43% statements, 73.5% branches, 96.18% functions, and 87.07% lines.
+- Durable task-outcome RED run `33278105807` preserved the previous 130 passing tests while the new FailTask/BlockTask regressions failed at the expected unsupported boundary. Review/atomicity run `33278493339` passed **32/32 test files and 133/133 tests**, plus coverage at 84.99% statements, 74.15% branches, 96.36% functions, and 86.73% lines, including a forced mid-batch rollback followed by successful exact retry.
 - Frozen installation resolves `@mindrail/contracts 0.0.0 <- packages/contracts`, confirming the root runtime uses the workspace contract package.
 - No new third-party runtime dependency was introduced for schema admission, protocol admission, bootstrap, transport, permission, persistence composition, rehydration, or durable query semantics.
 
@@ -80,7 +83,7 @@ The project is in `0.x` development and does not yet have a public product relea
 
 - `Quality` is not yet enforced as a required `main` merge gate; repository protection remains tracked separately in issue #3.
 - The durable application composition is verified against the local SQLite D1-like test harness, not a deployed Cloudflare Worker/Durable Object/D1 environment.
-- The durable dispatcher currently supports `RegisterAgent`, `StartSession`, `CreateGoal`, `CreateTask`, `ClaimTask`, `RecordCheckpoint`, `RequestPermission`, `RecordPermissionDecision`, and `CompleteTask`. Remaining v0.1 lifecycle/cancellation commands are still canonical runtime behavior but are explicitly unsupported by the durable composition until matching atomic persistence paths are added.
+- The durable dispatcher currently supports `RegisterAgent`, `StartSession`, `HeartbeatSession`, `EndSession`, `CreateGoal`, `CreateTask`, `ClaimTask`, `RenewLease`, `ReleaseLease`, `RecordCheckpoint`, `RequestPermission`, `RecordPermissionDecision`, `CompleteTask`, `FailTask`, `BlockTask`, and `ResumeTask`. `RetryTask`, `CancelTask`, and `CancelGoal` remain canonical runtime behavior but are explicitly unsupported by the durable composition until matching atomic persistence paths are added.
 - Durable application queries `ListGoals`, `ListGoalTasks`, and `GetTaskExecutionView` remain explicitly unsupported.
 - MindRail does not yet expose a verified deployed Cloudflare control-plane service, GitHub adapter, real Codex/ChatGPT integration, or unattended continuation of a real external agent across host/platform termination.
 - The deterministic v0.1 permission policy is intentionally small and is not an IAM system, credential manager, arbitrary policy DSL, or model-based authority mechanism.
