@@ -44,3 +44,6 @@ jobs:
 
       - name: Quality gate
         run: pnpm check
+
+      - name: Coverage
+        run: pnpm test:coverage
