@@ -1,0 +1,59 @@
+name: Apply reviewed runtime fixes once
+
+on:
+  push:
+    branches:
+      - feature/local-runtime-vertical-slice
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feature/local-runtime-vertical-slice
+      - name: Apply minimal reviewed fixes
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'src/runtime/in-memory-control-plane.ts';
+          let source = fs.readFileSync(path, 'utf8');
+
+          const oldReplay = `      const replay = clone(existing.response);\n      replay.replayed = true;\n      return replay;`;
+          const newReplay = `      const replay = clone(existing.response);\n      replay.replayed = true;\n      if (command.correlationId === undefined) {\n        delete replay.correlationId;\n      } else {\n        replay.correlationId = command.correlationId;\n      }\n      return replay;`;
+          if (!source.includes(oldReplay)) {
+            throw new Error('Expected replay block was not found.');
+          }
+          source = source.replace(oldReplay, newReplay);
+
+          const oldClaimStart = `    const task = this.requireTask(input.workspaceId, input.taskId);\n    this.assertRevision(task.revision, input.expectedTaskRevision, \`Task \${task.id}\`);\n\n    const session = this.requireActiveSession(input.workspaceId, input.sessionId);`;
+          const newClaimStart = `    const task = this.requireTask(input.workspaceId, input.taskId);\n\n    const session = this.requireActiveSession(input.workspaceId, input.sessionId);`;
+          if (!source.includes(oldClaimStart)) {
+            throw new Error('Expected claim revision block was not found.');
+          }
+          source = source.replace(oldClaimStart, newClaimStart);
+
+          const leaseBlock = `    const existingLease = this.getEffectiveLease(task.id);\n    if (existingLease) {\n      if (existingLease.sessionId === session.id) {\n        return { task: clone(task), lease: clone(existingLease) };\n      }\n      throw new RuntimeError('CONFLICT', \`Task \${task.id} already has an active Lease.\`);\n    }\n\n`;
+          const leaseBlockWithRevision = `${leaseBlock}    this.assertRevision(task.revision, input.expectedTaskRevision, \`Task \${task.id}\`);\n\n`;
+          if (!source.includes(leaseBlock)) {
+            throw new Error('Expected effective Lease block was not found.');
+          }
+          source = source.replace(leaseBlock, leaseBlockWithRevision);
+
+          fs.writeFileSync(path, source);
+          NODE
+      - name: Commit fix and remove one-time workflow
+        shell: bash
+        run: |
+          rm .github/workflows/fix-runtime-review-regressions.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/runtime/in-memory-control-plane.ts .github/workflows/fix-runtime-review-regressions.yml
+          git commit -m "fix: align duplicate claim and replay tracing semantics"
+          git push origin HEAD:feature/local-runtime-vertical-slice
