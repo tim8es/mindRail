@@ -45,7 +45,8 @@ function createGoalArgs(overrides: Record<string, unknown> = {}) {
 describe('MCP v0.1 semantic adapter', () => {
   it('exposes only explicit accepted MindRail command/query tools', () => {
     const transport = createMcpTransport(createDependencies());
-    const names = transport.listTools().map((tool) => tool.name);
+    const tools = transport.listTools();
+    const names = tools.map((tool) => tool.name);
 
     expect(names).toEqual([
       'mindrail_register_agent',
@@ -92,18 +93,23 @@ describe('MCP v0.1 semantic adapter', () => {
         'browser',
       ]),
     );
-    for (const tool of transport.listTools()) {
-      expect(tool.inputSchema).toEqual(expect.objectContaining({ additionalProperties: false }));
+    for (const tool of tools) {
+      const expected = expect.objectContaining({ additionalProperties: false });
+      expect(tool.inputSchema).toEqual(expected);
     }
   });
 
   it('rejects invalid MCP arguments before principal binding or dispatch', async () => {
     const deps = createDependencies();
     const transport = createMcpTransport(deps);
+    const args = createGoalArgs({
+      commandId: '',
+      unexpectedAuthority: 'allow',
+    });
 
     const response = await transport.callTool(
       'mindrail_create_goal',
-      createGoalArgs({ commandId: '', unexpectedAuthority: 'allow' }),
+      args,
       principal,
     );
 
@@ -122,21 +128,28 @@ describe('MCP v0.1 semantic adapter', () => {
     deps.authorize.mockResolvedValue(false);
     const transport = createMcpTransport(deps);
 
-    const response = await transport.callTool('mindrail_create_goal', createGoalArgs(), principal);
+    const response = await transport.callTool(
+      'mindrail_create_goal',
+      createGoalArgs(),
+      principal,
+    );
 
     expect(response).toEqual(
-      expect.objectContaining({ error: expect.objectContaining({ code: 'ACTOR_NOT_AUTHORIZED' }) }),
+      expect.objectContaining({
+        error: expect.objectContaining({ code: 'ACTOR_NOT_AUTHORIZED' }),
+      }),
     );
     expect(deps.dispatchCommand).not.toHaveBeenCalled();
   });
 
-  it('preserves command tracing/idempotency fields and delegates exactly once', async () => {
+  it('preserves command tracing/idempotency fields and delegates once', async () => {
     const deps = createDependencies();
     const transport = createMcpTransport(deps);
+    const args = createGoalArgs({ causationId: 'cause-1' });
 
     const response = await transport.callTool(
       'mindrail_create_goal',
-      createGoalArgs({ causationId: 'cause-1' }),
+      args,
       principal,
     );
 
@@ -158,18 +171,19 @@ describe('MCP v0.1 semantic adapter', () => {
     );
   });
 
-  it('maps explicit read tools to the query dispatcher without lifecycle mutation', async () => {
+  it('maps explicit read tools only to the query dispatcher', async () => {
     const deps = createDependencies();
     const transport = createMcpTransport(deps);
+    const args = {
+      protocolVersion: '0.1',
+      workspaceId: 'ws-1',
+      actor: { type: 'human', id: 'human-1' },
+      correlationId: 'corr-1',
+    };
 
     const response = await transport.callTool(
       'mindrail_get_workspace',
-      {
-        protocolVersion: '0.1',
-        workspaceId: 'ws-1',
-        actor: { type: 'human', id: 'human-1' },
-        correlationId: 'corr-1',
-      },
+      args,
       principal,
     );
 
@@ -182,7 +196,7 @@ describe('MCP v0.1 semantic adapter', () => {
     expect(deps.dispatchCommand).not.toHaveBeenCalled();
   });
 
-  it('returns bounded unsupported results for accepted parallel-stream operations', async () => {
+  it('returns bounded unsupported results for accepted parallel operations', async () => {
     const deps = createDependencies();
     deps.dispatchCommand.mockResolvedValueOnce({
       protocolVersion: '0.1',
@@ -195,17 +209,18 @@ describe('MCP v0.1 semantic adapter', () => {
       },
     });
     const transport = createMcpTransport(deps);
+    const args = {
+      protocolVersion: '0.1',
+      commandId: 'cmd-heartbeat',
+      workspaceId: 'ws-1',
+      actor: { type: 'agent', id: 'agent-1' },
+      sessionId: 'session-1',
+      expectedSessionRevision: 1,
+    };
 
     const response = await transport.callTool(
       'mindrail_heartbeat_session',
-      {
-        protocolVersion: '0.1',
-        commandId: 'cmd-heartbeat',
-        workspaceId: 'ws-1',
-        actor: { type: 'agent', id: 'agent-1' },
-        sessionId: 'session-1',
-        expectedSessionRevision: 1,
-      },
+      args,
       principal,
     );
 
@@ -219,7 +234,8 @@ describe('MCP v0.1 semantic adapter', () => {
 
   it('does not leak principal or authorization exception details', async () => {
     const deps = createDependencies();
-    deps.authorize.mockRejectedValue(new Error('Authorization: Bearer mcp-super-secret'));
+    const error = new Error('Authorization: Bearer mcp-super-secret');
+    deps.authorize.mockRejectedValue(error);
     const transport = createMcpTransport(deps);
 
     const response = await transport.callTool(
