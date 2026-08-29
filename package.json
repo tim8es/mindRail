@@ -16,8 +16,8 @@
     "typecheck": "tsc -p tsconfig.base.json && pnpm --filter @mindrail/contracts typecheck",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "contracts:generate": "node scripts/contracts/generate.mjs",
-    "contracts:check-generated": "node scripts/contracts/generate.mjs --check",
+    "contracts:generate": "node scripts/contracts/generate.ts",
+    "contracts:check-generated": "node scripts/contracts/generate.ts --check",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
   },
   "devDependencies": {
