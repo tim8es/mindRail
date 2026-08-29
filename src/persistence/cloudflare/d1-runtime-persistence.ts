@@ -860,6 +860,17 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     });
   }
 
+  async getPermissionRequest(
+    workspaceId: string,
+    requestId: string,
+  ): Promise<PermissionRequest | undefined> {
+    return this.readRecord<PermissionRequest>(
+      `SELECT record_json FROM permission_requests WHERE workspace_id = ? AND id = ?`,
+      workspaceId,
+      requestId,
+    );
+  }
+
   async loadWorkspaceState(workspaceId: string): Promise<WorkspaceStateSnapshot | undefined> {
     const workspaceRecord = await this.getWorkspace(workspaceId);
     if (!workspaceRecord) return undefined;
@@ -926,12 +937,67 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     };
   }
 
-  async listTaskCheckpoints(workspaceId: string, taskId: string): Promise<Checkpoint[]> {
+  async listClaimableTasks(
+    workspaceId: string,
+    sessionId: string,
+    limit: number,
+    offset = 0,
+  ): Promise<Task[]> {
+    const session = await this.getSession(workspaceId, sessionId);
+    if (!session) throw new PersistenceError('NOT_FOUND', `Session ${sessionId} was not found.`);
+    if (session.status !== 'active') {
+      throw new PersistenceError('CONFLICT', `Session ${sessionId} is not active.`);
+    }
+    const agent = await this.getAgent(workspaceId, session.agentId);
+    if (!agent || agent.status !== 'active') {
+      throw new PersistenceError('CONFLICT', `Agent ${session.agentId} is not active.`);
+    }
+    return this.readRecords<Task>(
+      `SELECT t.record_json
+       FROM tasks t
+       WHERE t.workspace_id = ? AND t.status = 'ready'
+         AND NOT EXISTS (
+           SELECT 1
+           FROM task_required_capabilities trc
+           WHERE trc.workspace_id = t.workspace_id AND trc.task_id = t.id
+             AND NOT EXISTS (
+               SELECT 1
+               FROM agent_capabilities ac
+               WHERE ac.workspace_id = t.workspace_id
+                 AND ac.agent_id = ?
+                 AND ac.capability = trc.capability
+             )
+         )
+       ORDER BY t.created_at_ms, t.id
+       LIMIT ? OFFSET ?`,
+      workspaceId,
+      agent.id,
+      boundedLimit(limit),
+      boundedOffset(offset),
+    );
+  }
+
+  async listTaskCheckpoints(
+    workspaceId: string,
+    taskId: string,
+    limit?: number,
+    offset = 0,
+  ): Promise<Checkpoint[]> {
+    if (limit === undefined) {
+      return this.readRecords<Checkpoint>(
+        `SELECT record_json FROM checkpoints
+         WHERE workspace_id = ? AND task_id = ? ORDER BY created_at_ms, id`,
+        workspaceId,
+        taskId,
+      );
+    }
     return this.readRecords<Checkpoint>(
       `SELECT record_json FROM checkpoints
-       WHERE workspace_id = ? AND task_id = ? ORDER BY created_at_ms, id`,
+       WHERE workspace_id = ? AND task_id = ? ORDER BY created_at_ms, id LIMIT ? OFFSET ?`,
       workspaceId,
       taskId,
+      boundedLimit(limit),
+      boundedOffset(offset),
     );
   }
 
@@ -947,18 +1013,32 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
   async listPermissionDecisions(
     workspaceId: string,
     requestId: string,
+    limit?: number,
+    offset = 0,
   ): Promise<PermissionDecision[]> {
+    if (limit === undefined) {
+      return this.readRecords<PermissionDecision>(
+        `SELECT record_json FROM permission_decisions
+         WHERE workspace_id = ? AND request_id = ? ORDER BY sequence, created_at_ms, id`,
+        workspaceId,
+        requestId,
+      );
+    }
     return this.readRecords<PermissionDecision>(
       `SELECT record_json FROM permission_decisions
-       WHERE workspace_id = ? AND request_id = ? ORDER BY sequence, created_at_ms, id`,
+       WHERE workspace_id = ? AND request_id = ?
+       ORDER BY sequence, created_at_ms, id LIMIT ? OFFSET ?`,
       workspaceId,
       requestId,
+      boundedLimit(limit),
+      boundedOffset(offset),
     );
   }
 
   async listPendingHumanPermissions(
     workspaceId: string,
     limit: number,
+    offset = 0,
   ): Promise<PendingHumanPermission[]> {
     const rows = await this.all<PendingPermissionRow>(
       `SELECT pr.record_json AS request_json, pd.record_json AS decision_json
@@ -969,9 +1049,10 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
          ON pd.workspace_id = ph.workspace_id AND pd.id = ph.latest_decision_id
        WHERE ph.workspace_id = ? AND ph.latest_outcome = 'HUMAN_REQUIRED'
        ORDER BY pr.created_at_ms, pr.id
-       LIMIT ?`,
+       LIMIT ? OFFSET ?`,
       workspaceId,
       boundedLimit(limit),
+      boundedOffset(offset),
     );
     return rows.map((row) => ({
       request: parseJson<PermissionRequest>(row.request_json, 'PermissionRequest'),
@@ -1366,14 +1447,14 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     return workspace;
   }
 
-  private async getWorkspace(workspaceId: string): Promise<Workspace | undefined> {
+  async getWorkspace(workspaceId: string): Promise<Workspace | undefined> {
     return this.readRecord<Workspace>(
       `SELECT record_json FROM workspaces WHERE id = ?`,
       workspaceId,
     );
   }
 
-  private async getGoal(workspaceId: string, goalId: string): Promise<Goal | undefined> {
+  async getGoal(workspaceId: string, goalId: string): Promise<Goal | undefined> {
     return this.readRecord<Goal>(
       `SELECT record_json FROM goals WHERE workspace_id = ? AND id = ?`,
       workspaceId,
@@ -1381,7 +1462,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     );
   }
 
-  private async getTask(workspaceId: string, taskId: string): Promise<Task | undefined> {
+  async getTask(workspaceId: string, taskId: string): Promise<Task | undefined> {
     return this.readRecord<Task>(
       `SELECT record_json FROM tasks WHERE workspace_id = ? AND id = ?`,
       workspaceId,
@@ -1389,7 +1470,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     );
   }
 
-  private async getAgent(workspaceId: string, agentId: string): Promise<Agent | undefined> {
+  async getAgent(workspaceId: string, agentId: string): Promise<Agent | undefined> {
     return this.readRecord<Agent>(
       `SELECT record_json FROM agents WHERE workspace_id = ? AND id = ?`,
       workspaceId,
@@ -1397,7 +1478,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     );
   }
 
-  private async getSession(workspaceId: string, sessionId: string): Promise<Session | undefined> {
+  async getSession(workspaceId: string, sessionId: string): Promise<Session | undefined> {
     return this.readRecord<Session>(
       `SELECT record_json FROM sessions WHERE workspace_id = ? AND id = ?`,
       workspaceId,
@@ -1405,7 +1486,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     );
   }
 
-  private async getLease(workspaceId: string, leaseId: string): Promise<Lease | undefined> {
+  async getLease(workspaceId: string, leaseId: string): Promise<Lease | undefined> {
     return this.readRecord<Lease>(
       `SELECT record_json FROM leases WHERE workspace_id = ? AND id = ?`,
       workspaceId,
@@ -1534,6 +1615,16 @@ function boundedLimit(limit: number): number {
     throw new PersistenceError('INVALID_RECORD', 'Query limit must be a positive integer.');
   }
   return Math.min(limit, 1000);
+}
+
+function boundedOffset(offset: number): number {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1_000_000) {
+    throw new PersistenceError(
+      'INVALID_RECORD',
+      'Query offset must be a bounded non-negative integer.',
+    );
+  }
+  return offset;
 }
 
 function changes(result: D1ResultLike): number {
