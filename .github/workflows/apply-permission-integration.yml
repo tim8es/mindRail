@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   apply:
-    if: github.event.head_commit.message == 'chore: stage permission engine implementation'
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
