@@ -57,7 +57,10 @@ describe('runtime state controls', () => {
       leaseId: firstClaim.lease.id,
       fencingToken: firstClaim.lease.fencingToken,
       expectedTaskRevision: firstClaim.task.revision,
-      reason: { code: 'task.execution_failed', summary: 'Worker reported a deterministic failure.' },
+      reason: {
+        code: 'task.execution_failed',
+        summary: 'Worker reported a deterministic failure.',
+      },
       summary: 'Execution failed.',
       evidence: [],
     });

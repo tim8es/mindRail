@@ -80,10 +80,9 @@ describe('in-memory control plane', () => {
     expect(completed.checkpoint.kind).toBe('result');
     expect(runtime.getGoal('ws-1', goal.id).status).toBe('succeeded');
     expect(runtime.getTask('ws-1', task.id).status).toBe('succeeded');
-    expect(runtime.listTaskCheckpoints('ws-1', task.id).map((checkpoint) => checkpoint.kind)).toEqual([
-      'progress',
-      'result',
-    ]);
+    expect(
+      runtime.listTaskCheckpoints('ws-1', task.id).map((checkpoint) => checkpoint.kind),
+    ).toEqual(['progress', 'result']);
   });
 
   it('enforces lease ownership, fencing, and recovery', () => {

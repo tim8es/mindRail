@@ -33,11 +33,13 @@
 ### Task 1: Executable Goal-to-completion loop
 
 **Files:**
+
 - Create: `test/runtime/control-plane.test.ts`
 - Create after RED: `src/runtime/in-memory-control-plane.ts`
 - Create after RED: `src/runtime/errors.ts`
 
 **Interfaces:**
+
 - Produces: `InMemoryControlPlane`, `RuntimeError`.
 - Constructor accepts deterministic `now`, `idFactory`, `leaseDurationMs`, and bootstrap Workspace identity/name.
 - Methods: `getWorkspace`, `registerAgent`, `startSession`, `createGoal`, `createTask`, `claimTask`, `recordCheckpoint`, `completeTask`, `getGoal`, `getTask`, `getLease`, `listTaskCheckpoints`.
@@ -86,10 +88,12 @@ git commit -m "feat: add executable local control-plane loop"
 ### Task 2: Lease ownership, recovery, and fencing
 
 **Files:**
+
 - Modify: `test/runtime/control-plane.test.ts`
 - Modify after RED: `src/runtime/in-memory-control-plane.ts`
 
 **Interfaces:**
+
 - Add methods: `releaseLease`, and recovery claim semantics for running Tasks without an effective Lease.
 
 - [ ] **Step 1: Add failing Lease/fencing tests**
@@ -130,11 +134,13 @@ git commit -m "feat: enforce lease fencing and recovery"
 ### Task 3: Protocol command idempotency
 
 **Files:**
+
 - Create: `src/runtime/protocol.ts`
 - Modify: `test/runtime/control-plane.test.ts`
 - Modify after RED: `src/runtime/in-memory-control-plane.ts`
 
 **Interfaces:**
+
 - Produce `ProtocolCommand`, `ProtocolSuccess`, `ProtocolFailure`, `execute(command)`.
 - First dispatcher coverage: `CreateGoal`, `CreateTask`, `ClaimTask`, `RecordCheckpoint`, `CompleteTask`, `FailTask`, `RetryTask`, `CancelTask`, `CancelGoal`.
 
@@ -175,11 +181,13 @@ git commit -m "feat: add protocol idempotency receipts"
 ### Task 4: Failure, retry, and stop controls
 
 **Files:**
+
 - Modify: `test/runtime/control-plane.test.ts`
 - Modify after RED: `src/runtime/in-memory-control-plane.ts`
 - Modify after RED: `src/runtime/protocol.ts`
 
 **Interfaces:**
+
 - Add/complete `failTask`, `retryTask`, `cancelTask`, `cancelGoal`.
 
 - [ ] **Step 1: Add failing state-control tests**
@@ -221,6 +229,7 @@ git commit -m "feat: add retry and cancellation controls"
 ### Task 5: Reconcile repository state and verify the slice
 
 **Files:**
+
 - Modify: `docs/CURRENT_STATE.md`
 - Modify: `docs/roadmap/V0_1.md`
 - Modify: `CHANGELOG.md`

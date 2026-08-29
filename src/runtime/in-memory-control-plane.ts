@@ -337,7 +337,9 @@ export class InMemoryControlPlane {
       acceptanceCriteria: [...input.acceptanceCriteria] as [string, ...string[]],
       requiredCapabilities: [...input.requiredCapabilities],
       dependencyTaskIds: [...input.dependencyTaskIds],
-      status: dependencies.every((dependency) => dependency.status === 'succeeded') ? 'ready' : 'pending',
+      status: dependencies.every((dependency) => dependency.status === 'succeeded')
+        ? 'ready'
+        : 'pending',
     };
     this.tasks.set(task.id, task);
     this.checkpointsByTask.set(task.id, []);
@@ -353,7 +355,10 @@ export class InMemoryControlPlane {
     const session = this.requireActiveSession(input.workspaceId, input.sessionId);
     const agent = this.requireAgent(input.workspaceId, session.agentId);
     if (!task.requiredCapabilities.every((capability) => agent.capabilities.includes(capability))) {
-      throw new RuntimeError('CAPABILITY_MISMATCH', `Agent ${agent.id} lacks required capabilities.`);
+      throw new RuntimeError(
+        'CAPABILITY_MISMATCH',
+        `Agent ${agent.id} lacks required capabilities.`,
+      );
     }
 
     const existingLease = this.getEffectiveLease(task.id);
@@ -747,7 +752,10 @@ export class InMemoryControlPlane {
 
     const lease = this.leases.get(input.leaseId);
     if (!lease || lease.workspaceId !== input.workspaceId || lease.taskId !== task.id) {
-      throw new RuntimeError('LEASE_NOT_ACTIVE', `Lease ${input.leaseId} is not active for Task ${task.id}.`);
+      throw new RuntimeError(
+        'LEASE_NOT_ACTIVE',
+        `Lease ${input.leaseId} is not active for Task ${task.id}.`,
+      );
     }
     this.materializeLeaseExpiry(lease);
     if (lease.status === 'expired') {
@@ -760,10 +768,16 @@ export class InMemoryControlPlane {
       throw new RuntimeError('LEASE_NOT_ACTIVE', `Lease ${lease.id} belongs to another Session.`);
     }
     if (lease.fencingToken !== input.fencingToken) {
-      throw new RuntimeError('STALE_FENCING_TOKEN', `Fencing token ${input.fencingToken} is stale.`);
+      throw new RuntimeError(
+        'STALE_FENCING_TOKEN',
+        `Fencing token ${input.fencingToken} is stale.`,
+      );
     }
     if (this.effectiveLeaseByTask.get(task.id) !== lease.id) {
-      throw new RuntimeError('STALE_FENCING_TOKEN', `Lease ${lease.id} is no longer authoritative.`);
+      throw new RuntimeError(
+        'STALE_FENCING_TOKEN',
+        `Lease ${lease.id} is no longer authoritative.`,
+      );
     }
 
     return { task, lease };
