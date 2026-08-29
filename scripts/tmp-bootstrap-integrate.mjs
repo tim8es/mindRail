@@ -48,7 +48,6 @@ export interface StartSessionCommand extends CommandEnvelope {
 export interface HeartbeatSessionCommand`,
   'bootstrap command interfaces',
 );
-
 replaceOnce(
   'src/runtime/protocol.ts',
   `export type ProtocolCommand =
@@ -70,7 +69,6 @@ replaceOnce(
   'HeartbeatSession',`,
   'bootstrap command discriminators',
 );
-
 replaceOnce(
   'src/runtime/protocol-validation.ts',
   `  switch (discriminator as ProtocolCommand['command']) {
@@ -86,7 +84,6 @@ replaceOnce(
     case 'HeartbeatSession':`,
   'bootstrap validation cases',
 );
-
 replaceOnce(
   'src/runtime/protocol-validation.ts',
   `function requireStringArray(record: Record<string, unknown>, key: string, errors: string[]): void {
@@ -185,7 +182,6 @@ replaceRegex(
   `\nexport type ApplicationCommand = ProtocolCommand;`,
   'parallel application command definitions',
 );
-
 replaceRegex(
   'src/application/validation.ts',
   /  if \(isRuntimeProtocolCommand\(commandName\)\) \{[\s\S]*?  return \{ ok: true, value: record as unknown as ApplicationCommand \};\n\}/,
@@ -203,6 +199,12 @@ replaceRegex(
 );
 replaceRegex(
   'src/application/validation.ts',
+  /\nfunction requireEntityFields\([\s\S]*?\n}\n\nfunction isActorRef/,
+  `\nfunction isActorRef`,
+  'obsolete requireEntityFields helper',
+);
+replaceRegex(
+  'src/application/validation.ts',
   /\nfunction isBoundedString\([\s\S]*?function isRecord/,
   `\nfunction isRecord`,
   'obsolete application string validators',
@@ -213,6 +215,13 @@ replaceRegex(
   /import type \{ ProtocolCommand \} from '\.\.\/runtime\/protocol\.ts';\n/,
   '',
   'obsolete ProtocolCommand import',
+);
+replaceOnce(
+  'src/application/in-memory-dispatcher.ts',
+  `  ApplicationCommand,
+  ApplicationCommandName,`,
+  `  ApplicationCommandName,`,
+  'obsolete ApplicationCommand import',
 );
 replaceOnce(
   'src/application/in-memory-dispatcher.ts',
