@@ -19,11 +19,11 @@
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
   },
   "devDependencies": {
-    "@eslint/js": "10.9.1",
+    "@eslint/js": "10.0.1",
     "@vitest/coverage-v8": "4.1.11",
     "eslint": "10.9.1",
     "globals": "17.11.0",
-    "prettier": "3.9.0",
+    "prettier": "3.9.6",
     "typescript": "6.0.3",
     "typescript-eslint": "8.68.0",
     "vitest": "4.1.11"
