@@ -4,6 +4,7 @@ import type {
   EvidenceRef,
   Goal,
   Lease,
+  Reason,
   Session,
   Task,
   Workspace,
@@ -12,15 +13,19 @@ import type {
 import { RuntimeError } from './errors.ts';
 import {
   semanticFingerprint,
+  type CancelGoalCommand,
+  type CancelTaskCommand,
   type ClaimTaskCommand,
   type CompleteTaskCommand,
   type CreateGoalCommand,
   type CreateTaskCommand,
+  type FailTaskCommand,
   type ProtocolCommand,
   type ProtocolFailure,
   type ProtocolResponse,
   type ProtocolSuccess,
   type RecordCheckpointCommand,
+  type RetryTaskCommand,
 } from './protocol.ts';
 
 export interface InMemoryControlPlaneOptions {
@@ -98,6 +103,30 @@ export interface CompleteTaskInput {
   evidence: EvidenceRef[];
 }
 
+export interface FailTaskInput extends CompleteTaskInput {
+  reason: Reason;
+}
+
+export interface RetryTaskInput {
+  workspaceId: string;
+  taskId: string;
+  expectedTaskRevision: number;
+}
+
+export interface CancelTaskInput {
+  workspaceId: string;
+  taskId: string;
+  expectedTaskRevision: number;
+  reason: Reason;
+}
+
+export interface CancelGoalInput {
+  workspaceId: string;
+  goalId: string;
+  expectedGoalRevision: number;
+  reason: Reason;
+}
+
 export interface ClaimTaskResult {
   task: Task;
   lease: Lease;
@@ -107,6 +136,19 @@ export interface CompleteTaskResult {
   task: Task;
   lease: Lease;
   checkpoint: Checkpoint;
+}
+
+export type FailTaskResult = CompleteTaskResult;
+
+export interface CancelTaskResult {
+  task: Task;
+  lease?: Lease;
+}
+
+export interface CancelGoalResult {
+  goal: Goal;
+  tasks: Task[];
+  leases: Lease[];
 }
 
 interface CommandReceipt {
@@ -154,6 +196,10 @@ export class InMemoryControlPlane {
   execute(command: ClaimTaskCommand): ProtocolResponse<ClaimTaskResult>;
   execute(command: RecordCheckpointCommand): ProtocolResponse<Checkpoint>;
   execute(command: CompleteTaskCommand): ProtocolResponse<CompleteTaskResult>;
+  execute(command: FailTaskCommand): ProtocolResponse<FailTaskResult>;
+  execute(command: RetryTaskCommand): ProtocolResponse<Task>;
+  execute(command: CancelTaskCommand): ProtocolResponse<CancelTaskResult>;
+  execute(command: CancelGoalCommand): ProtocolResponse<CancelGoalResult>;
   execute(command: ProtocolCommand): ProtocolResponse {
     this.assertWorkspace(command.workspaceId);
     const receiptKey = `${command.workspaceId}\u0000${command.commandId}`;
@@ -398,6 +444,7 @@ export class InMemoryControlPlane {
 
     const timestamp = this.timestamp();
     task.status = 'succeeded';
+    delete task.statusReason;
     task.revision += 1;
     task.updatedAt = timestamp;
 
@@ -410,6 +457,132 @@ export class InMemoryControlPlane {
     this.reconcileGoal(task.goalId);
 
     return { task: clone(task), lease: clone(lease), checkpoint: clone(checkpoint) };
+  }
+
+  failTask(input: FailTaskInput): FailTaskResult {
+    this.assertWorkspace(input.workspaceId);
+    const { task, lease } = this.requireExecutorAuthority(input);
+    this.assertRevision(task.revision, input.expectedTaskRevision, `Task ${task.id}`);
+
+    const checkpoint = this.appendCheckpoint({
+      workspaceId: input.workspaceId,
+      taskId: task.id,
+      sessionId: input.sessionId,
+      leaseId: lease.id,
+      fencingToken: input.fencingToken,
+      kind: 'result',
+      summary: input.summary,
+      evidence: input.evidence,
+    });
+
+    const timestamp = this.timestamp();
+    task.status = 'failed';
+    task.statusReason = clone(input.reason);
+    task.revision += 1;
+    task.updatedAt = timestamp;
+
+    lease.status = 'released';
+    lease.revision += 1;
+    lease.updatedAt = timestamp;
+    this.effectiveLeaseByTask.delete(task.id);
+
+    return { task: clone(task), lease: clone(lease), checkpoint: clone(checkpoint) };
+  }
+
+  retryTask(input: RetryTaskInput): Task {
+    this.assertWorkspace(input.workspaceId);
+    const task = this.requireTask(input.workspaceId, input.taskId);
+    this.assertRevision(task.revision, input.expectedTaskRevision, `Task ${task.id}`);
+    const goal = this.requireGoal(input.workspaceId, task.goalId);
+    if (goal.status !== 'active') {
+      throw new RuntimeError('INVALID_STATE_TRANSITION', `Goal ${goal.id} is terminal.`);
+    }
+    if (task.status !== 'failed') {
+      throw new RuntimeError('INVALID_STATE_TRANSITION', `Task ${task.id} is not failed.`);
+    }
+    if (this.getEffectiveLease(task.id)) {
+      throw new RuntimeError('CONFLICT', `Task ${task.id} still has an active Lease.`);
+    }
+
+    task.status = 'ready';
+    delete task.statusReason;
+    task.revision += 1;
+    task.updatedAt = this.timestamp();
+    return clone(task);
+  }
+
+  cancelTask(input: CancelTaskInput): CancelTaskResult {
+    this.assertWorkspace(input.workspaceId);
+    const task = this.requireTask(input.workspaceId, input.taskId);
+    this.assertRevision(task.revision, input.expectedTaskRevision, `Task ${task.id}`);
+    if (!isCancellableTaskStatus(task.status)) {
+      throw new RuntimeError('INVALID_STATE_TRANSITION', `Task ${task.id} is terminal.`);
+    }
+
+    const timestamp = this.timestamp();
+    const lease = this.getEffectiveLease(task.id);
+    if (lease) {
+      lease.status = 'revoked';
+      lease.revision += 1;
+      lease.updatedAt = timestamp;
+      this.effectiveLeaseByTask.delete(task.id);
+    }
+
+    task.status = 'cancelled';
+    task.statusReason = clone(input.reason);
+    task.revision += 1;
+    task.updatedAt = timestamp;
+
+    return {
+      task: clone(task),
+      ...(lease === undefined ? {} : { lease: clone(lease) }),
+    };
+  }
+
+  cancelGoal(input: CancelGoalInput): CancelGoalResult {
+    this.assertWorkspace(input.workspaceId);
+    const goal = this.requireGoal(input.workspaceId, input.goalId);
+    this.assertRevision(goal.revision, input.expectedGoalRevision, `Goal ${goal.id}`);
+    if (goal.status !== 'active') {
+      throw new RuntimeError('INVALID_STATE_TRANSITION', `Goal ${goal.id} is terminal.`);
+    }
+
+    const timestamp = this.timestamp();
+    goal.status = 'cancelled';
+    goal.revision += 1;
+    goal.updatedAt = timestamp;
+
+    const cancelledTasks: Task[] = [];
+    const revokedLeases: Lease[] = [];
+    for (const task of this.tasks.values()) {
+      if (task.workspaceId !== input.workspaceId || task.goalId !== goal.id) {
+        continue;
+      }
+      if (!isCancellableTaskStatus(task.status)) {
+        continue;
+      }
+
+      const lease = this.getEffectiveLease(task.id);
+      if (lease) {
+        lease.status = 'revoked';
+        lease.revision += 1;
+        lease.updatedAt = timestamp;
+        this.effectiveLeaseByTask.delete(task.id);
+        revokedLeases.push(clone(lease));
+      }
+
+      task.status = 'cancelled';
+      task.statusReason = clone(input.reason);
+      task.revision += 1;
+      task.updatedAt = timestamp;
+      cancelledTasks.push(clone(task));
+    }
+
+    return {
+      goal: clone(goal),
+      tasks: cancelledTasks,
+      leases: revokedLeases,
+    };
   }
 
   getGoal(workspaceId: string, goalId: string): Goal {
@@ -485,6 +658,38 @@ export class InMemoryControlPlane {
           expectedTaskRevision: command.expectedTaskRevision,
           summary: command.summary,
           evidence: command.evidence,
+        });
+      case 'FailTask':
+        return this.failTask({
+          workspaceId: command.workspaceId,
+          taskId: command.taskId,
+          sessionId: command.sessionId,
+          leaseId: command.leaseId,
+          fencingToken: command.fencingToken,
+          expectedTaskRevision: command.expectedTaskRevision,
+          reason: command.reason,
+          summary: command.summary,
+          evidence: command.evidence,
+        });
+      case 'RetryTask':
+        return this.retryTask({
+          workspaceId: command.workspaceId,
+          taskId: command.taskId,
+          expectedTaskRevision: command.expectedTaskRevision,
+        });
+      case 'CancelTask':
+        return this.cancelTask({
+          workspaceId: command.workspaceId,
+          taskId: command.taskId,
+          expectedTaskRevision: command.expectedTaskRevision,
+          reason: command.reason,
+        });
+      case 'CancelGoal':
+        return this.cancelGoal({
+          workspaceId: command.workspaceId,
+          goalId: command.goalId,
+          expectedGoalRevision: command.expectedGoalRevision,
+          reason: command.reason,
         });
     }
   }
@@ -708,6 +913,10 @@ export class InMemoryControlPlane {
   private timestamp(): string {
     return this.now().toISOString();
   }
+}
+
+function isCancellableTaskStatus(status: Task['status']): boolean {
+  return status === 'pending' || status === 'ready' || status === 'running' || status === 'blocked';
 }
 
 function clone<T>(value: T): T {
