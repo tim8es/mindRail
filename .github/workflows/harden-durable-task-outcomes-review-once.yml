@@ -1,0 +1,36 @@
+name: Harden durable task outcomes review once
+
+on:
+  push:
+    branches:
+      - feature/durable-task-outcomes
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feature/durable-task-outcomes
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - run: npm install --global "$(node -p "require('./package.json').packageManager")"
+      - run: pnpm install --frozen-lockfile
+      - run: python3 scripts/harden-durable-task-outcomes-review.py
+      - run: pnpm exec prettier --write test/application/durable-task-outcomes.test.ts
+      - run: git rm .github/workflows/harden-durable-task-outcomes-review-once.yml scripts/harden-durable-task-outcomes-review.py
+      - run: pnpm vitest run test/application/durable-task-outcomes.test.ts
+      - run: pnpm check
+      - run: pnpm test:coverage
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add test/application/durable-task-outcomes.test.ts
+          git commit -m "test: harden durable task outcome evidence"
+          git push origin HEAD:feature/durable-task-outcomes
