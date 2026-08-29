@@ -17,10 +17,7 @@ import {
   type QueryFailure,
   type QueryResponse,
 } from '../../application/protocol.ts';
-import {
-  parseApplicationCommand,
-  parseApplicationQuery,
-} from '../../application/validation.ts';
+import { parseApplicationCommand, parseApplicationQuery } from '../../application/validation.ts';
 
 const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
 
@@ -57,7 +54,10 @@ export function createHttpTransport(dependencies: HttpTransportDependencies): Ht
       }
 
       if (!isJsonContentType(request.headers.get('content-type'))) {
-        return jsonResponse(queryFailure('INVALID_INPUT', 'Content-Type must be application/json.'), 415);
+        return jsonResponse(
+          queryFailure('INVALID_INPUT', 'Content-Type must be application/json.'),
+          415,
+        );
       }
 
       const bodyResult = await readBoundedJson(request, maxBodyBytes);
@@ -67,11 +67,16 @@ export function createHttpTransport(dependencies: HttpTransportDependencies): Ht
       }
 
       if (route.kind === 'command') {
-        const parsed = parseApplicationCommand(route.name as ApplicationCommandName, bodyResult.value);
+        const parsed = parseApplicationCommand(
+          route.name as ApplicationCommandName,
+          bodyResult.value,
+        );
         if (!parsed.ok) {
           return jsonResponse(commandFailureFromInput(bodyResult.value, parsed.message), 400);
         }
-        if (!(await isAuthorized(dependencies.authorizer, principal, claimForCommand(parsed.value)))) {
+        if (
+          !(await isAuthorized(dependencies.authorizer, principal, claimForCommand(parsed.value)))
+        ) {
           return jsonResponse(
             commandFailure(parsed.value, 'ACTOR_NOT_AUTHORIZED', 'Principal is not authorized.'),
             403,
@@ -94,7 +99,11 @@ export function createHttpTransport(dependencies: HttpTransportDependencies): Ht
       }
       if (!(await isAuthorized(dependencies.authorizer, principal, claimForQuery(parsed.value)))) {
         return jsonResponse(
-          queryFailure('ACTOR_NOT_AUTHORIZED', 'Principal is not authorized.', parsed.value.correlationId),
+          queryFailure(
+            'ACTOR_NOT_AUTHORIZED',
+            'Principal is not authorized.',
+            parsed.value.correlationId,
+          ),
           403,
         );
       }
@@ -103,7 +112,11 @@ export function createHttpTransport(dependencies: HttpTransportDependencies): Ht
         return jsonResponse(response, statusForResponse(response));
       } catch {
         return jsonResponse(
-          queryFailure('INTERNAL_ERROR', 'Application dispatch failed.', parsed.value.correlationId),
+          queryFailure(
+            'INTERNAL_ERROR',
+            'Application dispatch failed.',
+            parsed.value.correlationId,
+          ),
           500,
         );
       }
@@ -128,10 +141,7 @@ function parseRoute(pathname: string): Route | undefined {
 async function readBoundedJson(
   request: Request,
   maxBodyBytes: number,
-): Promise<
-  | { ok: true; value: unknown }
-  | { ok: false; message: string; oversized: boolean }
-> {
+): Promise<{ ok: true; value: unknown } | { ok: false; message: string; oversized: boolean }> {
   const contentLength = request.headers.get('content-length');
   if (contentLength !== null) {
     const declared = Number(contentLength);
@@ -141,7 +151,8 @@ async function readBoundedJson(
   }
 
   const reader = request.body?.getReader();
-  if (reader === undefined) return { ok: false, message: 'Request body is required.', oversized: false };
+  if (reader === undefined)
+    return { ok: false, message: 'Request body is required.', oversized: false };
   const decoder = new TextDecoder('utf-8', { fatal: true });
   let bytes = 0;
   let text = '';
@@ -152,7 +163,11 @@ async function readBoundedJson(
       bytes += chunk.value.byteLength;
       if (bytes > maxBodyBytes) {
         await reader.cancel();
-        return { ok: false, message: 'Request body exceeds the configured limit.', oversized: true };
+        return {
+          ok: false,
+          message: 'Request body exceeds the configured limit.',
+          oversized: true,
+        };
       }
       text += decoder.decode(chunk.value, { stream: true });
     }
@@ -191,10 +206,9 @@ function claimForQuery(query: ApplicationQuery): PrincipalClaim {
   };
 }
 
-function hasSessionId(value: ApplicationCommand | ApplicationQuery): value is (
-  | ApplicationCommand
-  | ApplicationQuery
-) & { sessionId: string } {
+function hasSessionId(
+  value: ApplicationCommand | ApplicationQuery,
+): value is (ApplicationCommand | ApplicationQuery) & { sessionId: string } {
   return 'sessionId' in value && typeof value.sessionId === 'string';
 }
 
