@@ -1,0 +1,48 @@
+name: Protocol admission RED
+
+on:
+  push:
+    branches:
+      - integration/transports-v0-1
+    paths:
+      - .github/workflows/protocol-admission-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  red:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: integration/transports-v0-1
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - run: npm install --global "$(node -p "require('./package.json').packageManager")"
+      - run: pnpm install --frozen-lockfile
+      - name: Add focused protocol regressions
+        run: |
+          cat > test/runtime/protocol-admission-bounds-review.test.ts <<'EOF'
+          import { describe, expect, it } from 'vitest';
+          import { validateProtocolCommand } from '../../src/runtime/protocol-validation.ts';
+
+          const base = {
+            protocolVersion: '0.1', commandId: 'cmd-1', workspaceId: 'ws-1', actor: { type: 'agent', id: 'agent-1' },
+            taskId: 'task-1', sessionId: 'session-1', leaseId: 'lease-1', fencingToken: 1,
+          };
+
+          describe('protocol structural bounds', () => {
+            it('rejects malformed and oversized EvidenceRef arrays', () => {
+              expect(validateProtocolCommand({ ...base, command: 'BlockTask', expectedTaskRevision: 1, reason: { code: 'task.blocked', summary: 'blocked' }, evidence: [{ uri: 123 }] }).valid).toBe(false);
+              expect(validateProtocolCommand({ ...base, command: 'BlockTask', expectedTaskRevision: 1, reason: { code: 'task.blocked', summary: 'blocked' }, evidence: Array.from({ length: 33 }, (_, i) => ({ uri: `e-${i}` })) }).valid).toBe(false);
+            });
+            it('rejects PermissionRequest justification beyond the canonical 2000-character bound', () => {
+              expect(validateProtocolCommand({ ...base, command: 'RequestPermission', permission: 'repository.write', justification: 'x'.repeat(2001) }).valid).toBe(false);
+            });
+          });
+          EOF
+          pnpm exec prettier --write test/runtime/protocol-admission-bounds-review.test.ts
+      - run: pnpm vitest run test/runtime/protocol-admission-bounds-review.test.ts
