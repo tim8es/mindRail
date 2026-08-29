@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mindrail:schema:domain:v1:session",
+  "title": "Session",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "workspaceId", "agentId", "revision", "createdAt", "updatedAt", "status", "lastSeenAt"],
+  "properties": {
+    "id": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "workspaceId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "agentId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "createdAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" },
+    "updatedAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" },
+    "status": { "type": "string", "enum": ["active", "ended", "expired"] },
+    "lastSeenAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" },
+    "endedAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" }
+  }
+}
