@@ -44,15 +44,15 @@ A request sent before a deadline but admitted after it has no preserved authorit
 
 Task v1 keeps seven states:
 
-| Status | Meaning | Claimable |
-| --- | --- | --- |
-| `pending` | waiting for dependencies | no |
-| `ready` | dependencies satisfied, not yet executing | yes |
-| `running` | execution has begun and work is incomplete | yes only when no effective Lease exists |
-| `blocked` | explicitly paused | no |
-| `succeeded` | completed successfully | no |
-| `failed` | execution ended unsuccessfully | no until explicit retry |
-| `cancelled` | explicitly abandoned/stopped | no |
+| Status      | Meaning                                    | Claimable                               |
+| ----------- | ------------------------------------------ | --------------------------------------- |
+| `pending`   | waiting for dependencies                   | no                                      |
+| `ready`     | dependencies satisfied, not yet executing  | yes                                     |
+| `running`   | execution has begun and work is incomplete | yes only when no effective Lease exists |
+| `blocked`   | explicitly paused                          | no                                      |
+| `succeeded` | completed successfully                     | no                                      |
+| `failed`    | execution ended unsuccessfully             | no until explicit retry                 |
+| `cancelled` | explicitly abandoned/stopped               | no                                      |
 
 `running` is persisted. It is not derived from Lease presence.
 
@@ -83,22 +83,22 @@ Failure or cancellation of a dependency does not automatically fail/cancel downs
 
 ### 4. Task transitions
 
-| From | To | Trigger |
-| --- | --- | --- |
-| `pending` | `ready` | dependency reconciliation |
-| `pending` | `blocked` | authorized block |
-| `pending` | `cancelled` | task/Goal cancellation |
-| `ready` | `running` | first accepted `ClaimTask` |
-| `ready` | `blocked` | authorized block |
-| `ready` | `cancelled` | task/Goal cancellation |
-| `running` | `blocked` | accepted block |
-| `running` | `succeeded` | accepted completion |
-| `running` | `failed` | accepted failure |
-| `running` | `cancelled` | authorized cancellation |
-| `blocked` | `ready` | unblock when dependencies are satisfied |
-| `blocked` | `pending` | unblock when dependencies are not satisfied |
-| `blocked` | `cancelled` | cancellation |
-| `failed` | `ready` | explicit `RetryTask` |
+| From      | To          | Trigger                                     |
+| --------- | ----------- | ------------------------------------------- |
+| `pending` | `ready`     | dependency reconciliation                   |
+| `pending` | `blocked`   | authorized block                            |
+| `pending` | `cancelled` | task/Goal cancellation                      |
+| `ready`   | `running`   | first accepted `ClaimTask`                  |
+| `ready`   | `blocked`   | authorized block                            |
+| `ready`   | `cancelled` | task/Goal cancellation                      |
+| `running` | `blocked`   | accepted block                              |
+| `running` | `succeeded` | accepted completion                         |
+| `running` | `failed`    | accepted failure                            |
+| `running` | `cancelled` | authorized cancellation                     |
+| `blocked` | `ready`     | unblock when dependencies are satisfied     |
+| `blocked` | `pending`   | unblock when dependencies are not satisfied |
+| `blocked` | `cancelled` | cancellation                                |
+| `failed`  | `ready`     | explicit `RetryTask`                        |
 
 All other Task transitions are illegal in v0.1.
 
@@ -241,18 +241,18 @@ Rules:
 
 ### 12. Required race outcomes
 
-| Race | Required result |
-| --- | --- |
-| two Sessions claim one Task | at most one new Lease commits |
-| same Session claims its already leased Task | return existing Lease unchanged |
-| two renewals use same Lease revision | one mutates; the other gets revision mismatch unless it is exact idempotent replay |
-| completion vs Lease expiry | authoritative admission order/time decides; at/after expiry completion is rejected |
-| checkpoint vs reassignment | checkpoint accepted only if old authority linearizes first |
-| cancellation vs completion | one terminal operation wins; the loser is rejected |
-| stale executor after reassignment | all old-fence mutations rejected |
-| `CreateTask` vs automatic Goal success | exactly one Goal-level order; cannot accept Task beneath a Goal already terminalized by the competing operation |
-| `CreateTask` vs `CancelGoal`/`FailGoal` | exactly one Goal-level order; no accepted new Task may survive under the terminal Goal |
-| delayed `RetryTask` after a different terminal transition | reject unless current Task state is exactly `failed` |
+| Race                                                      | Required result                                                                                                 |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| two Sessions claim one Task                               | at most one new Lease commits                                                                                   |
+| same Session claims its already leased Task               | return existing Lease unchanged                                                                                 |
+| two renewals use same Lease revision                      | one mutates; the other gets revision mismatch unless it is exact idempotent replay                              |
+| completion vs Lease expiry                                | authoritative admission order/time decides; at/after expiry completion is rejected                              |
+| checkpoint vs reassignment                                | checkpoint accepted only if old authority linearizes first                                                      |
+| cancellation vs completion                                | one terminal operation wins; the loser is rejected                                                              |
+| stale executor after reassignment                         | all old-fence mutations rejected                                                                                |
+| `CreateTask` vs automatic Goal success                    | exactly one Goal-level order; cannot accept Task beneath a Goal already terminalized by the competing operation |
+| `CreateTask` vs `CancelGoal`/`FailGoal`                   | exactly one Goal-level order; no accepted new Task may survive under the terminal Goal                          |
+| delayed `RetryTask` after a different terminal transition | reject unless current Task state is exactly `failed`                                                            |
 
 ### 13. Invariants
 
