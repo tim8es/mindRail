@@ -1,0 +1,43 @@
+name: Durable review fixes once
+
+on:
+  push:
+    branches:
+      - feature/durable-application-composition
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feature/durable-application-composition
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - run: npm install --global "$(node -p "require('./package.json').packageManager")"
+      - run: pnpm install --frozen-lockfile
+      - name: Apply review fixes
+        run: python scripts/tmp/durable-review-fix.py
+      - name: Format changed files
+        run: pnpm exec prettier --write src/persistence/ports.ts src/persistence/cloudflare/d1-runtime-persistence.ts src/application/durable-dispatcher.ts test/application/durable-idempotency-recovery-review.test.ts
+      - name: Focused regressions
+        run: pnpm exec vitest run test/application/durable-idempotency-recovery-review.test.ts test/application/durable-dispatcher.test.ts test/application/durable-queries.test.ts test/e2e/durable-http-control-plane-e2e.test.ts test/persistence/d1-runtime-persistence-review.test.ts
+      - name: Remove temporary harness
+        run: git rm .github/workflows/durable-review-fix-once.yml scripts/tmp/durable-review-fix.py
+      - name: Full check
+        run: pnpm check
+      - name: Coverage
+        run: pnpm test:coverage
+      - name: Commit and push review fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/persistence/ports.ts src/persistence/cloudflare/d1-runtime-persistence.ts src/application/durable-dispatcher.ts test/application/durable-idempotency-recovery-review.test.ts
+          git commit -m "fix: preserve durable terminal errors and recovery discovery"
+          git push origin HEAD:feature/durable-application-composition
