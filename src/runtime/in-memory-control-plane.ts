@@ -4,14 +4,25 @@ import type {
   EvidenceRef,
   Goal,
   Lease,
+  PermissionDecision,
+  PermissionRequest,
   Reason,
   Session,
   Task,
   Workspace,
 } from '@mindrail/contracts';
 
+import type { PermissionPolicy } from '../policy/permission-policy.ts';
+import { permissionPolicyV01 } from '../policy/permission-policy.ts';
 import type { CanonicalDomainTarget, CanonicalDomainValidator } from './domain-validation.ts';
 import { RuntimeError } from './errors.ts';
+import {
+  InMemoryPermissionService,
+  type PermissionGrantAuthority,
+  type RecordPermissionDecisionInput,
+  type RequestPermissionInput,
+  type RequestPermissionResult,
+} from './permission-service.ts';
 import {
   semanticFingerprint,
   type BlockTaskCommand,
@@ -28,10 +39,12 @@ import {
   type ProtocolFailure,
   type ProtocolResponse,
   type ProtocolSuccess,
+  type RecordPermissionDecisionCommand,
   type RecordCheckpointCommand,
   type ReleaseLeaseCommand,
   type RenewLeaseCommand,
   type ResumeTaskCommand,
+  type RequestPermissionCommand,
   type RetryTaskCommand,
 } from './protocol.ts';
 import { isProtocolEntityId, validateProtocolCommand } from './protocol-validation.ts';
@@ -44,6 +57,7 @@ export interface InMemoryControlPlaneOptions {
   leaseDurationMs: number;
   sessionTimeoutMs: number;
   validateCanonicalDomainRecord: CanonicalDomainValidator;
+  permissionPolicy?: PermissionPolicy;
 }
 
 export interface RegisterAgentInput {
@@ -217,6 +231,7 @@ export class InMemoryControlPlane {
   private readonly leaseDurationMs: number;
   private readonly sessionTimeoutMs: number;
   private readonly validateCanonicalDomainRecord: CanonicalDomainValidator;
+  private readonly permissionService: InMemoryPermissionService;
 
   private readonly agents = new Map<string, Agent>();
   private readonly sessions = new Map<string, Session>();
@@ -241,6 +256,15 @@ export class InMemoryControlPlane {
     this.leaseDurationMs = options.leaseDurationMs;
     this.sessionTimeoutMs = options.sessionTimeoutMs;
     this.validateCanonicalDomainRecord = options.validateCanonicalDomainRecord;
+    this.permissionService = new InMemoryPermissionService({
+      now: this.now,
+      idFactory: this.idFactory,
+      validateCanonicalDomainRecord: this.validateCanonicalDomainRecord,
+      policy: options.permissionPolicy ?? permissionPolicyV01,
+      assertExecutionAuthority: (authority) => {
+        this.requireExecutorAuthority(authority);
+      },
+    });
     const timestamp = this.timestamp();
     const workspace: Workspace = {
       id: options.workspaceId,
@@ -266,6 +290,8 @@ export class InMemoryControlPlane {
   execute(command: FailTaskCommand): ProtocolResponse<FailTaskResult>;
   execute(command: BlockTaskCommand): ProtocolResponse<BlockTaskResult>;
   execute(command: ResumeTaskCommand): ProtocolResponse<Task>;
+  execute(command: RequestPermissionCommand): ProtocolResponse<RequestPermissionResult>;
+  execute(command: RecordPermissionDecisionCommand): ProtocolResponse<PermissionDecision>;
   execute(command: RetryTaskCommand): ProtocolResponse<Task>;
   execute(command: CancelTaskCommand): ProtocolResponse<CancelTaskResult>;
   execute(command: CancelGoalCommand): ProtocolResponse<CancelGoalResult>;
@@ -835,6 +861,31 @@ export class InMemoryControlPlane {
     };
   }
 
+  requestPermission(input: RequestPermissionInput): RequestPermissionResult {
+    this.assertWorkspace(input.workspaceId);
+    return this.permissionService.requestPermission(input);
+  }
+
+  recordPermissionDecision(input: RecordPermissionDecisionInput): PermissionDecision {
+    this.assertWorkspace(input.workspaceId);
+    return this.permissionService.recordPermissionDecision(input);
+  }
+
+  getPermissionRequest(workspaceId: string, requestId: string): PermissionRequest {
+    this.assertWorkspace(workspaceId);
+    return this.permissionService.getPermissionRequest(workspaceId, requestId);
+  }
+
+  listPermissionDecisions(workspaceId: string, requestId: string): PermissionDecision[] {
+    this.assertWorkspace(workspaceId);
+    return this.permissionService.listPermissionDecisions(workspaceId, requestId);
+  }
+
+  isPermissionGrantEffective(input: PermissionGrantAuthority): boolean {
+    this.assertWorkspace(input.workspaceId);
+    return this.permissionService.isPermissionGrantEffective(input);
+  }
+
   getGoal(workspaceId: string, goalId: string): Goal {
     return clone(this.requireGoal(workspaceId, goalId));
   }
@@ -968,6 +1019,27 @@ export class InMemoryControlPlane {
           workspaceId: command.workspaceId,
           taskId: command.taskId,
           expectedTaskRevision: command.expectedTaskRevision,
+        });
+      case 'RequestPermission':
+        return this.requestPermission({
+          workspaceId: command.workspaceId,
+          taskId: command.taskId,
+          sessionId: command.sessionId,
+          leaseId: command.leaseId,
+          fencingToken: command.fencingToken,
+          permission: command.permission,
+          justification: command.justification,
+          ...(command.resource === undefined ? {} : { resource: command.resource }),
+        });
+      case 'RecordPermissionDecision':
+        return this.recordPermissionDecision({
+          workspaceId: command.workspaceId,
+          requestId: command.requestId,
+          actor: command.actor,
+          outcome: command.outcome,
+          expectedPreviousDecisionId: command.expectedPreviousDecisionId,
+          reasonCode: command.reasonCode,
+          ...(command.reason === undefined ? {} : { reason: command.reason }),
         });
       case 'RetryTask':
         this.assertControllerActor(command);
