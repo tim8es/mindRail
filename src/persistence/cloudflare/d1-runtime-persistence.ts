@@ -18,6 +18,7 @@ import {
   type CommandReceiptInput,
   type CompleteTaskCommitInput,
   type CompleteTaskCommitValue,
+  type DeferredCommandReceiptInput,
   type DurableRuntimePersistence,
   type MutationCommitResult,
   type PendingHumanPermission,
@@ -307,12 +308,16 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
   async claimTask(
     input: ClaimTaskCommitInput,
   ): Promise<MutationCommitResult<ClaimTaskCommitValue>> {
+    if (input.receipt !== undefined && input.deferredReceipt !== undefined) {
+      throw new PersistenceError('INVALID_RECORD', 'ClaimTask cannot supply two receipt sources.');
+    }
     this.assertReceipt(input.workspaceId, input.receipt);
+    this.assertDeferredReceipt(input.workspaceId, input.deferredReceipt);
     this.assertRelatedAudit(input.workspaceId, input.auditEvent);
     const nowMs = timestampMs(input.now, 'claim now');
 
     return this.coordinator.runSerialized(input.workspaceId, async () => {
-      const replay = await this.resolveReceipt(input.receipt);
+      const replay = await this.resolveReceiptSource(input.receipt, input.deferredReceipt);
       if (replay) return replay;
       await this.requireWorkspace(input.workspaceId);
 
@@ -342,12 +347,11 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
       const statements: D1PreparedStatementLike[] = [];
       if (activeLease && timestampMs(activeLease.expiresAt, 'Lease.expiresAt') > nowMs) {
         if (activeLease.sessionId === input.sessionId) {
-          this.pushReceiptStatement(statements, input.receipt);
+          const value = { task: clone(task), lease: clone(activeLease) };
+          const finalReceipt = this.materializeReceipt(input.receipt, input.deferredReceipt, value);
+          this.pushReceiptStatement(statements, finalReceipt);
           if (statements.length > 0) await this.batch(statements, 'record duplicate claim receipt');
-          return {
-            kind: 'committed',
-            value: { task: clone(task), lease: clone(activeLease) },
-          };
+          return { kind: 'committed', value };
         }
         throw new PersistenceError(
           'CONFLICT',
@@ -458,9 +462,11 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
 
       statements.push(this.insertLeaseStatement(lease));
       this.pushAuditStatement(statements, input.auditEvent);
-      this.pushReceiptStatement(statements, input.receipt);
+      const value = { task: clone(nextTask), lease: clone(lease) };
+      const finalReceipt = this.materializeReceipt(input.receipt, input.deferredReceipt, value);
+      this.pushReceiptStatement(statements, finalReceipt);
       await this.batch(statements, 'claim Task');
-      return { kind: 'committed', value: { task: clone(nextTask), lease: clone(lease) } };
+      return { kind: 'committed', value };
     });
   }
 
@@ -999,6 +1005,50 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     );
   }
 
+  private async resolveReceiptSource<T>(
+    receipt: CommandReceiptInput | undefined,
+    deferredReceipt: DeferredCommandReceiptInput<T> | undefined,
+  ): Promise<{ kind: 'replayed'; receipt: StoredCommandReceipt } | undefined> {
+    if (receipt) return this.resolveReceipt(receipt);
+    if (!deferredReceipt) return undefined;
+    const stored = await this.getCommandReceipt(
+      deferredReceipt.workspaceId,
+      deferredReceipt.commandId,
+    );
+    if (!stored) return undefined;
+    if (
+      stored.command !== deferredReceipt.command ||
+      stored.semanticFingerprint !== deferredReceipt.semanticFingerprint
+    ) {
+      throw new PersistenceError(
+        'IDEMPOTENCY_CONFLICT',
+        `Command ${deferredReceipt.commandId} was already admitted with different semantics.`,
+      );
+    }
+    return { kind: 'replayed', receipt: clone(stored) };
+  }
+
+  private materializeReceipt<T>(
+    receipt: CommandReceiptInput | undefined,
+    deferredReceipt: DeferredCommandReceiptInput<T> | undefined,
+    value: T,
+  ): CommandReceiptInput | undefined {
+    if (receipt) return receipt;
+    if (!deferredReceipt) return undefined;
+    const materialized: CommandReceiptInput = {
+      workspaceId: deferredReceipt.workspaceId,
+      commandId: deferredReceipt.commandId,
+      command: deferredReceipt.command,
+      semanticFingerprint: deferredReceipt.semanticFingerprint,
+      outcomeKind: deferredReceipt.outcomeKind,
+      responseSnapshot: deferredReceipt.buildResponseSnapshot(clone(value)),
+      createdAt: deferredReceipt.createdAt,
+      ...(deferredReceipt.expiresAt === undefined ? {} : { expiresAt: deferredReceipt.expiresAt }),
+    };
+    this.assertReceipt(materialized.workspaceId, materialized);
+    return materialized;
+  }
+
   private async resolveReceipt(
     receipt: CommandReceiptInput | undefined,
   ): Promise<{ kind: 'replayed'; receipt: StoredCommandReceipt } | undefined> {
@@ -1137,6 +1187,29 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
       'CommandReceipt.responseSnapshot',
       MAX_RECEIPT_SNAPSHOT_BYTES,
     );
+  }
+
+  private assertDeferredReceipt<T>(
+    workspaceId: string,
+    receipt: DeferredCommandReceiptInput<T> | undefined,
+  ): void {
+    if (!receipt) return;
+    if (receipt.workspaceId !== workspaceId) {
+      throw new PersistenceError(
+        'INVALID_RECORD',
+        'Deferred receipt Workspace does not match mutation.',
+      );
+    }
+    if (!receipt.commandId || !receipt.command || !receipt.semanticFingerprint) {
+      throw new PersistenceError(
+        'INVALID_RECORD',
+        'Deferred receipt identity fields must be non-empty.',
+      );
+    }
+    timestampMs(receipt.createdAt, 'DeferredCommandReceipt.createdAt');
+    if (receipt.expiresAt !== undefined) {
+      timestampMs(receipt.expiresAt, 'DeferredCommandReceipt.expiresAt');
+    }
   }
 
   private pushReceiptStatement(

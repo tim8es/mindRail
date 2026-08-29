@@ -69,7 +69,10 @@ async function dispatchDurableCommand(
 ): Promise<CommandResponse> {
   try {
     const fingerprint = semanticFingerprint(command);
-    const stored = await options.persistence.getCommandReceipt(command.workspaceId, command.commandId);
+    const stored = await options.persistence.getCommandReceipt(
+      command.workspaceId,
+      command.commandId,
+    );
     if (stored) return replayStoredReceipt(command, fingerprint, stored);
 
     const snapshot = await options.persistence.loadWorkspaceState(command.workspaceId);
@@ -92,7 +95,9 @@ async function dispatchDurableCommand(
       leaseDurationMs: options.leaseDurationMs,
       sessionTimeoutMs: options.sessionTimeoutMs,
       validateCanonicalDomainRecord: options.validateCanonicalDomainRecord,
-      ...(options.permissionPolicy === undefined ? {} : { permissionPolicy: options.permissionPolicy }),
+      ...(options.permissionPolicy === undefined
+        ? {}
+        : { permissionPolicy: options.permissionPolicy }),
     });
     const semanticResponse = runtime.execute(command);
     if ('error' in semanticResponse) return semanticResponse;
@@ -131,7 +136,12 @@ async function commitDurableSuccess(
         command,
         await options.persistence.createAgent({
           agent: result,
-          receipt: receiptFor(command, fingerprint, successResponse(command, result), options.now()),
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
         }),
       );
     }
@@ -141,7 +151,12 @@ async function commitDurableSuccess(
         command,
         await options.persistence.createSession({
           session: result,
-          receipt: receiptFor(command, fingerprint, successResponse(command, result), options.now()),
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
         }),
       );
     }
@@ -151,7 +166,12 @@ async function commitDurableSuccess(
         command,
         await options.persistence.createGoal({
           goal: result,
-          receipt: receiptFor(command, fingerprint, successResponse(command, result), options.now()),
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
         }),
       );
     }
@@ -161,7 +181,12 @@ async function commitDurableSuccess(
         command,
         await options.persistence.createTask({
           task: result,
-          receipt: receiptFor(command, fingerprint, successResponse(command, result), options.now()),
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
         }),
       );
     }
@@ -191,7 +216,12 @@ async function commitDurableSuccess(
         await options.persistence.appendCheckpoint({
           checkpoint: result,
           now: options.now().toISOString(),
-          receipt: receiptFor(command, fingerprint, successResponse(command, result), options.now()),
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
         }),
       );
     }
@@ -202,7 +232,12 @@ async function commitDurableSuccess(
         await options.persistence.appendPermissionRequestWithInitialDecision({
           request: result.request,
           decision: result.decision,
-          receipt: receiptFor(command, fingerprint, successResponse(command, result), options.now()),
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
         }),
       );
     }
@@ -213,7 +248,12 @@ async function commitDurableSuccess(
         await options.persistence.appendPermissionDecision({
           decision: result,
           expectedPreviousDecisionId: command.expectedPreviousDecisionId,
-          receipt: receiptFor(command, fingerprint, successResponse(command, result), options.now()),
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
         }),
       );
     }
@@ -228,7 +268,8 @@ async function commitDurableSuccess(
         now: options.now().toISOString(),
         receipt: receiptFor(command, fingerprint, successResponse(command, result), options.now()),
       });
-      if (committed.kind === 'replayed') return replayStoredReceipt(command, fingerprint, committed.receipt);
+      if (committed.kind === 'replayed')
+        return replayStoredReceipt(command, fingerprint, committed.receipt);
       return successResponse(command, {
         task: committed.value.task,
         lease: committed.value.lease,
@@ -245,7 +286,11 @@ function resolveMutationResult<T>(
   committed: MutationCommitResult<T>,
 ): CommandResponse<T> {
   if (committed.kind === 'replayed') {
-    return replayStoredReceipt(command, semanticFingerprint(command), committed.receipt) as CommandResponse<T>;
+    return replayStoredReceipt(
+      command,
+      semanticFingerprint(command),
+      committed.receipt,
+    ) as CommandResponse<T>;
   }
   return successResponse(command, committed.value);
 }
@@ -339,11 +384,23 @@ function persistenceFailure(command: ApplicationCommand, error: PersistenceError
     case 'REVISION_MISMATCH':
       return commandFailure(command, 'REVISION_MISMATCH', 'Durable revision changed.');
     case 'STALE_AUTHORITY':
-      return commandFailure(command, 'STALE_FENCING_TOKEN', 'Durable execution authority is stale.');
+      return commandFailure(
+        command,
+        'STALE_FENCING_TOKEN',
+        'Durable execution authority is stale.',
+      );
     case 'IDEMPOTENCY_CONFLICT':
-      return commandFailure(command, 'IDEMPOTENCY_CONFLICT', 'Command id has different durable semantics.');
+      return commandFailure(
+        command,
+        'IDEMPOTENCY_CONFLICT',
+        'Command id has different durable semantics.',
+      );
     case 'INVALID_STATE_TRANSITION':
-      return commandFailure(command, 'INVALID_STATE_TRANSITION', 'Durable state transition is invalid.');
+      return commandFailure(
+        command,
+        'INVALID_STATE_TRANSITION',
+        'Durable state transition is invalid.',
+      );
     case 'INVALID_RECORD':
     case 'INTEGRITY_ERROR':
       return commandFailure(command, 'INTERNAL_ERROR', 'Durable state integrity check failed.');

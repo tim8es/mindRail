@@ -66,6 +66,17 @@ export interface CommandReceiptInput {
 
 export type StoredCommandReceipt = Readonly<CommandReceiptInput>;
 
+export interface DeferredCommandReceiptInput<T> {
+  workspaceId: string;
+  commandId: string;
+  command: string;
+  semanticFingerprint: string;
+  outcomeKind: 'result' | 'error';
+  createdAt: string;
+  expiresAt?: string;
+  buildResponseSnapshot(value: T): unknown;
+}
+
 export type MutationCommitResult<T> =
   | {
       kind: 'committed';
@@ -107,6 +118,7 @@ export interface ClaimTaskCommitInput {
   lease: Omit<Lease, 'fencingToken'>;
   now: string;
   receipt?: CommandReceiptInput;
+  deferredReceipt?: DeferredCommandReceiptInput<ClaimTaskCommitValue>;
   auditEvent?: AuditEvent;
 }
 
