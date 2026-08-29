@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { InMemoryControlPlane } from '../../src/runtime/in-memory-control-plane.ts';
+import { RuntimeError } from '../../src/runtime/errors.ts';
 
 describe('in-memory control plane', () => {
   it('executes the first complete control-plane loop', () => {
@@ -83,5 +84,109 @@ describe('in-memory control plane', () => {
       'progress',
       'result',
     ]);
+  });
+
+  it('enforces lease ownership, fencing, and recovery', () => {
+    let sequence = 0;
+    const now = new Date('2026-08-29T12:00:00.000Z');
+    const runtime = new InMemoryControlPlane({
+      workspaceId: 'ws-1',
+      workspaceName: 'Dogfood',
+      now: () => new Date(now),
+      idFactory: (kind) => `${kind}-${++sequence}`,
+      leaseDurationMs: 60_000,
+    });
+
+    const firstAgent = runtime.registerAgent({
+      workspaceId: 'ws-1',
+      displayName: 'First worker',
+      capabilities: ['code.execute'],
+    });
+    const firstSession = runtime.startSession({ workspaceId: 'ws-1', agentId: firstAgent.id });
+    const secondAgent = runtime.registerAgent({
+      workspaceId: 'ws-1',
+      displayName: 'Recovery worker',
+      capabilities: ['code.execute'],
+    });
+    const secondSession = runtime.startSession({ workspaceId: 'ws-1', agentId: secondAgent.id });
+    const goal = runtime.createGoal({
+      workspaceId: 'ws-1',
+      title: 'Recover safely',
+      objective: 'Prove leases can move without stale authority.',
+      successCriteria: ['Recovered worker owns a higher fence.'],
+    });
+    const task = runtime.createTask({
+      workspaceId: 'ws-1',
+      goalId: goal.id,
+      title: 'Recover task',
+      objective: 'Release and reclaim execution authority.',
+      acceptanceCriteria: ['Stale execution is rejected.'],
+      requiredCapabilities: ['code.execute'],
+      dependencyTaskIds: [],
+    });
+
+    const firstClaim = runtime.claimTask({
+      workspaceId: 'ws-1',
+      taskId: task.id,
+      sessionId: firstSession.id,
+      expectedTaskRevision: task.revision,
+    });
+
+    const duplicateClaim = runtime.claimTask({
+      workspaceId: 'ws-1',
+      taskId: task.id,
+      sessionId: firstSession.id,
+      expectedTaskRevision: firstClaim.task.revision,
+    });
+    expect(duplicateClaim.lease.id).toBe(firstClaim.lease.id);
+    expect(duplicateClaim.lease.fencingToken).toBe(1);
+    expect(duplicateClaim.task.revision).toBe(firstClaim.task.revision);
+
+    expect(() =>
+      runtime.claimTask({
+        workspaceId: 'ws-1',
+        taskId: task.id,
+        sessionId: secondSession.id,
+        expectedTaskRevision: firstClaim.task.revision,
+      }),
+    ).toThrowError(RuntimeError);
+
+    const released = runtime.releaseLease({
+      workspaceId: 'ws-1',
+      taskId: task.id,
+      sessionId: firstSession.id,
+      leaseId: firstClaim.lease.id,
+      fencingToken: firstClaim.lease.fencingToken,
+      expectedLeaseRevision: firstClaim.lease.revision,
+    });
+    expect(released.status).toBe('released');
+    expect(runtime.getTask('ws-1', task.id).status).toBe('running');
+
+    const recovered = runtime.claimTask({
+      workspaceId: 'ws-1',
+      taskId: task.id,
+      sessionId: secondSession.id,
+      expectedTaskRevision: firstClaim.task.revision,
+    });
+    expect(recovered.task.status).toBe('running');
+    expect(recovered.lease.id).not.toBe(firstClaim.lease.id);
+    expect(recovered.lease.fencingToken).toBe(2);
+
+    try {
+      runtime.recordCheckpoint({
+        workspaceId: 'ws-1',
+        taskId: task.id,
+        sessionId: firstSession.id,
+        leaseId: firstClaim.lease.id,
+        fencingToken: firstClaim.lease.fencingToken,
+        kind: 'progress',
+        summary: 'Stale worker tried to write.',
+        evidence: [],
+      });
+      throw new Error('Expected stale executor to be rejected.');
+    } catch (error) {
+      expect(error).toBeInstanceOf(RuntimeError);
+      expect(['LEASE_NOT_ACTIVE', 'STALE_FENCING_TOKEN']).toContain((error as RuntimeError).code);
+    }
   });
 });
