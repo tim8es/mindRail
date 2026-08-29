@@ -7,17 +7,17 @@
   "required": ["id", "revision", "createdAt", "updatedAt", "name", "status"],
   "properties": {
     "id": {
-      "$ref": "./common.schema.json#/$defs/EntityId"
+      "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId"
     },
     "revision": {
       "type": "integer",
       "minimum": 1
     },
     "createdAt": {
-      "$ref": "./common.schema.json#/$defs/UtcDateTime"
+      "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime"
     },
     "updatedAt": {
-      "$ref": "./common.schema.json#/$defs/UtcDateTime"
+      "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime"
     },
     "name": {
       "type": "string",
