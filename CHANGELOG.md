@@ -25,7 +25,8 @@ The project is in `0.x` development and does not yet have a public product relea
 - Explicit Task retry/cancellation and Goal cancellation with effective-Lease revocation and stale-executor rejection.
 - Transport-neutral in-memory protocol dispatcher for the implemented lifecycle commands.
 - In-memory `(workspaceId, commandId)` idempotency receipts with semantic fingerprinting, immutable replay snapshots, tracing-field exclusion, and `IDEMPOTENCY_CONFLICT` handling.
-- Runtime TDD coverage for the end-to-end loop, fencing/recovery, idempotency, retry, Task cancellation, Goal cancellation, and stale completion rejection.
+- Runtime TDD coverage for the end-to-end loop, fencing/recovery, idempotency, retry, Task cancellation, Goal cancellation, stale completion rejection, controller actor authority, and canonical-schema admission.
+- A third-party-free `CanonicalDomainValidator` core seam; reference tests compose it with the actual strict Draft 2020-12 schemas using existing dev-only Ajv.
 
 ### Changed
 
@@ -37,20 +38,27 @@ The project is in `0.x` development and does not yet have a public product relea
 - `skipLibCheck` remains enabled only because an executed removal test exposed a TypeScript 6 declaration incompatibility in `@apidevtools/json-schema-ref-parser@11.9.3`; first-party Ajv interop errors were fixed directly instead of suppressed.
 - `NamespacedName` enforces the accepted lowercase-leading identifier grammar, and PermissionDecision structurally enforces first-decision/no-predecessor versus later-decision/required-predecessor shape.
 - Root runtime code now declares `@mindrail/contracts` as a `workspace:*` development dependency so strict root TypeScript compilation consumes the canonical contract package through normal workspace resolution rather than compiler path aliases.
+- Same-Session semantic duplicate claims now return the existing Lease before the optimistic Task-revision gate, so transport-independent duplicate claim semantics do not mint a second fence.
+- Idempotent replay preserves the stored result/error snapshot while reflecting the current retry correlation id; tracing-only correlation/causation fields remain outside semantic fingerprints.
+- `RetryTask`, `CancelTask`, and `CancelGoal` now fail closed for agent actors with `ACTOR_NOT_AUTHORIZED`; human/system actors retain controller authority.
+- Runtime admission now validates Workspace, Agent, Session, Goal, Task, Lease, and Checkpoint records before insertion, plus external `Reason` values before fail/cancel mutation. Rejected Lease admission no longer advances the fencing counter.
 
 ### Verification
 
 - Domain-contract verification established deterministic generated bindings, strict schema validation, generated-drift detection, and the canonical type package before runtime implementation began.
-- Runtime behavior was developed through focused RED → GREEN GitHub Actions cycles for the initial lifecycle, Lease/fencing recovery, protocol idempotency, and retry/cancellation controls.
+- Runtime behavior was developed through focused RED → GREEN GitHub Actions cycles for the initial lifecycle, Lease/fencing recovery, protocol idempotency, retry/cancellation controls, review regressions, controller actor authority, and canonical-schema admission.
 - Full GitHub Actions verification run `33254737970` on commit `57491f9b153a8163b927b0a811edabe4083068cb` passed `pnpm install --frozen-lockfile`, formatting, lint, strict root/contracts TypeScript checks, `contracts:check-generated`, the full Vitest suite, `pnpm check`, and `pnpm test:coverage`.
-- The full runtime verification reported **7/7 test files and 15/15 tests passing**.
-- V8 coverage for that run reported 83.79% statements, 63.85% branches, 96.36% functions, and 83.7% lines overall; `src/runtime` reported 82.68% statements and 82.58% lines. No repository-wide coverage threshold is claimed.
-- Frozen installation resolved `@mindrail/contracts 0.0.0 <- packages/contracts`, confirming the root runtime uses the workspace contract package.
+- Canonical-admission RED run `33255899914` proved that invalid Goal bounds, cancellation Reason, and Checkpoint Evidence were accepted before the fix; all three focused regressions failed for the expected missing-admission behavior.
+- Canonical-admission GREEN run `33256111682` passed the three focused regressions, full `pnpm check`, and `pnpm test:coverage`, reporting **9/9 test files and 26/26 tests passing**.
+- V8 coverage for that GREEN run reported 90.22% statements, 72.63% branches, 98.33% functions, and 90.17% lines overall; `src/runtime` reported 89.22% statements and 89.16% lines. No repository-wide coverage threshold is claimed.
+- Frozen installation resolves `@mindrail/contracts 0.0.0 <- packages/contracts`, confirming the root runtime uses the workspace contract package.
+- No new third-party runtime dependency was introduced for schema admission; Ajv remains existing dev/test tooling.
 
 ### Known limitations
 
 - `Quality` is not yet enforced as a required `main` merge gate; repository protection remains tracked separately in issue #3.
 - The current reference runtime is in-memory and single-process; runtime state and command receipts do not survive restart.
+- The canonical validator is an injected core boundary; deployed/reference production composition still needs to wire it to the canonical schemas.
 - The executable protocol dispatcher covers the first lifecycle subset, not every ADR-0005 command yet.
 - Session heartbeat/end, Lease renewal, block/resume, permission request/decision execution, AuditEvent persistence, and durable restart recovery remain future runtime work.
 - MindRail does not yet expose a deployed HTTP/MCP control-plane service, D1/Durable Objects runtime, GitHub integration, or real Codex/ChatGPT agent integration.
