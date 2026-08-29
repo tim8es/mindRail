@@ -23,9 +23,16 @@ The project is in `0.x` development and does not yet have a public product relea
 - In-memory `(workspaceId, commandId)` idempotency receipts with semantic fingerprinting, immutable terminal replay snapshots, tracing-field exclusion, and `IDEMPOTENCY_CONFLICT` handling.
 - Deterministic permission engine with versioned policy decisions, `HUMAN_REQUIRED`, human-only follow-up, supersession sequencing, fail-closed policy evaluation, and grant effectiveness tied to current Task/Session/Lease/fencing authority.
 - Cloudflare-oriented D1 persistence adapter and Workspace coordinator boundary with executable invariants for command receipt identity/replay, stale permission-decision heads, revision/fencing checks, and independent-coordinator claim serialization against one durable test database.
+- Persistence receipt parity for Agent, Session, Checkpoint, human PermissionDecision, and the existing durable Goal/Task/claim/permission/completion mutation paths.
+- Runtime canonical-state rehydration that restores persisted execution, checkpoint, permission, Session/Lease authority, and per-Task fencing counters without replaying commands.
+- Durable application dispatcher that reloads authoritative persisted state for each supported command, reuses the canonical runtime semantics, and commits through explicit persistence methods without a retained in-memory fallback.
+- Deferred `ClaimTask` receipt construction so the persisted/replayed response contains the fencing token allocated by the persistence transaction rather than a speculative runtime token.
+- First durable command loop for `RegisterAgent`, `StartSession`, `CreateGoal`, `CreateTask`, `ClaimTask`, `RecordCheckpoint`, `RequestPermission`, `RecordPermissionDecision`, and `CompleteTask`.
+- Explicit durable query ports and bounded query support for `GetWorkspace`, `GetGoal`, `GetTask`, `GetLease`, `GetAgent`, `GetSession`, `GetPermissionRequest`, `ListTaskCheckpoints`, `ListPendingHumanPermissions`, `ListPermissionDecisions`, and advisory `ListClaimableTasks`.
 - Bounded HTTP and MCP adapters over one application/protocol surface, preserving protocol error/idempotency envelopes and avoiding generic shell/filesystem/browser/action authority tools.
-- In-memory application dispatcher for all ADR-0005 commands plus bounded implemented queries (`GetWorkspace`, `GetGoal`, `GetTask`, `GetLease`, `ListTaskCheckpoints`).
+- In-memory application dispatcher for all ADR-0005 commands plus bounded queries.
 - HTTP/application end-to-end regression covering `RegisterAgent -> StartSession -> CreateGoal -> CreateTask -> ClaimTask -> RecordCheckpoint -> RequestPermission(repository.write) -> RecordPermissionDecision(ALLOW) -> CompleteTask`, followed by HTTP verification of final Task, Goal, Lease, and checkpoint state.
+- Durable HTTP end-to-end regressions covering restart after claim, restart after `HUMAN_REQUIRED`, response-loss receipt replay after application replacement, competing independent application claims, and fencing advancement after Lease expiry/recovery against the SQLite D1-like persistence harness.
 
 ### Changed
 
@@ -45,6 +52,8 @@ The project is in `0.x` development and does not yet have a public product relea
 - Effective Lease materialization includes Session liveness; stale Sessions are expired and their active Leases revoked using authoritative server time.
 - Application transport validation now reuses the canonical runtime protocol validator for all commands instead of maintaining a separate bootstrap validator/command authority.
 - Agent bootstrap pre-admission mirrors canonical Agent bounds: display name length, at most 64 unique namespaced capabilities, and no wildcard/fuzzy matching.
+- Persistence list reads used by the durable application surface now support explicit bounded offsets while legacy unpaginated persistence reads remain available where existing internal tests depend on them.
+- Durable `ListClaimableTasks` is advisory only; Task execution authority is still acquired and revalidated atomically by `ClaimTask`.
 
 ### Verification
 
@@ -56,15 +65,20 @@ The project is in `0.x` development and does not yet have a public product relea
 - Bootstrap protocol RED run `33267894635` failed all three new focused tests for the expected missing core `RegisterAgent`/`StartSession` behavior before production implementation.
 - Bootstrap integration run `33268117966` then passed the focused bootstrap/transport suite and full `pnpm check` after temporary integration harness cleanup.
 - HTTP control-plane E2E probe `33268217457` passed the complete local bootstrap/execution/permission/completion path without requiring another production fix.
+- Durable receipt-parity TDD captured expected failures before the missing atomic receipt paths were implemented, then passed focused persistence tests, full `pnpm check`, and coverage.
+- Runtime rehydration RED run failed all four new rehydration regressions while existing tests remained green; implementation run `33271407514` then passed focused rehydration verification, full `pnpm check`, and coverage.
+- Durable dispatcher RED verification failed all four new dispatcher regressions for the expected missing composition, while existing tests remained green. Task 3 implementation run `33271753166` passed focused dispatcher/persistence verification, full `pnpm check`, and coverage.
+- Durable query semantic RED run `33274570145` failed the four new query regressions because the durable dispatcher still returned `UNSUPPORTED_OPERATION`, while 115 existing tests passed. Task 4 integration run `33274741762` then passed focused durable-query/persistence verification, full `pnpm check`, and coverage.
+- Permanent Quality run `33274903333` passed the restart-safe durable HTTP E2E tree with **29/29 test files and 123/123 tests**, plus `pnpm test:coverage`. Overall coverage reported 85.3% statements, 73.3% branches, 96.15% functions, and 86.95% lines.
 - Frozen installation resolves `@mindrail/contracts 0.0.0 <- packages/contracts`, confirming the root runtime uses the workspace contract package.
-- No new third-party runtime dependency was introduced for schema admission, protocol admission, bootstrap, transport, or permission semantics.
+- No new third-party runtime dependency was introduced for schema admission, protocol admission, bootstrap, transport, permission, persistence composition, rehydration, or durable query semantics.
 
 ### Known limitations
 
 - `Quality` is not yet enforced as a required `main` merge gate; repository protection remains tracked separately in issue #3.
-- The local application/runtime composition is still in-memory. Its command receipts, Sessions, Leases, checkpoints, and permission state do not survive process restart.
-- A D1/Workspace-coordinator persistence adapter is implemented and verified separately, but it is not yet composed beneath the common HTTP/MCP application dispatcher or verified through restart/recovery E2E.
-- Several application queries remain explicitly unsupported: `ListGoals`, `ListGoalTasks`, `ListClaimableTasks`, `GetTaskExecutionView`, `GetAgent`, `GetSession`, `GetPermissionRequest`, `ListPendingHumanPermissions`, and `ListPermissionDecisions`.
-- MindRail does not yet expose a deployed Cloudflare control-plane service, GitHub adapter, real Codex/ChatGPT integration, or unattended continuation across host/runtime termination.
+- The durable application composition is verified against the local SQLite D1-like test harness, not a deployed Cloudflare Worker/Durable Object/D1 environment.
+- The durable dispatcher currently supports `RegisterAgent`, `StartSession`, `CreateGoal`, `CreateTask`, `ClaimTask`, `RecordCheckpoint`, `RequestPermission`, `RecordPermissionDecision`, and `CompleteTask`. Remaining v0.1 lifecycle/cancellation commands are still canonical runtime behavior but are explicitly unsupported by the durable composition until matching atomic persistence paths are added.
+- Durable application queries `ListGoals`, `ListGoalTasks`, and `GetTaskExecutionView` remain explicitly unsupported.
+- MindRail does not yet expose a verified deployed Cloudflare control-plane service, GitHub adapter, real Codex/ChatGPT integration, or unattended continuation of a real external agent across host/platform termination.
 - The deterministic v0.1 permission policy is intentionally small and is not an IAM system, credential manager, arbitrary policy DSL, or model-based authority mechanism.
 - MindRail-specific BUSL parameters and external-contribution licensing mechanics still require professional legal review before material reliance.
