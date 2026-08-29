@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mindrail:schema:domain:v1:permission-request",
+  "title": "PermissionRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "workspaceId",
+    "taskId",
+    "sessionId",
+    "leaseId",
+    "fencingToken",
+    "createdAt",
+    "permission",
+    "justification"
+  ],
+  "properties": {
+    "id": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "workspaceId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "taskId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "sessionId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "leaseId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "fencingToken": { "type": "integer", "minimum": 1 },
+    "createdAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" },
+    "permission": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/NamespacedName" },
+    "justification": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "resource": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/ResourceRef" }
+  }
+}

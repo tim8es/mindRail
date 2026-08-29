@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mindrail:schema:domain:v1:workspace",
+  "title": "Workspace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "revision", "createdAt", "updatedAt", "name", "status"],
+  "properties": {
+    "id": {
+      "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "createdAt": {
+      "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime"
+    },
+    "updatedAt": {
+      "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "archived"]
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mindrail:schema:domain:v1:audit-event",
+  "title": "AuditEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "workspaceId", "createdAt", "eventType", "actor", "subject", "correlationId"],
+  "properties": {
+    "id": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "workspaceId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "createdAt": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/UtcDateTime" },
+    "eventType": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/NamespacedName" },
+    "actor": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/ActorRef" },
+    "subject": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/ResourceRef" },
+    "correlationId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
+    "related": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/ResourceRef" }
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "to": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "attributes": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/NamespacedName" },
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "string", "maxLength": 500 },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" }
+        ]
+      }
+    }
+  }
+}
