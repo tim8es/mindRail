@@ -148,7 +148,8 @@ function rehydrate(snapshot: RuntimeSnapshot, now = '2026-08-29T18:00:30.000Z') 
 
 describe('runtime canonical snapshot rehydration', () => {
   it('restores execution, checkpoint, permission, and fencing state without replaying commands', () => {
-    const { snapshot, task, lease, session, permissionRequest, permissionDecision } = buildSnapshot();
+    const { snapshot, task, lease, session, permissionRequest, permissionDecision } =
+      buildSnapshot();
     const runtime = rehydrate(snapshot);
 
     expect(runtime.getTask('ws-1', task.id)).toEqual(task);
