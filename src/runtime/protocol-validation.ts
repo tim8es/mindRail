@@ -6,6 +6,7 @@ export interface ProtocolValidationResult {
 }
 
 const ENTITY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const NAMESPACED_NAME_PATTERN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 const COMMANDS = new Set([
   'CreateGoal',
   'CreateTask',
@@ -13,6 +14,8 @@ const COMMANDS = new Set([
   'RecordCheckpoint',
   'CompleteTask',
   'FailTask',
+  'RequestPermission',
+  'RecordPermissionDecision',
   'RetryTask',
   'CancelTask',
   'CancelGoal',
@@ -92,6 +95,21 @@ function validateCommandFields(
       requireString(command, 'summary', errors);
       requireEvidenceArray(command, 'evidence', errors);
       return;
+    case 'RequestPermission':
+      validateExecutorFields(command, errors);
+      requireNamespacedName(command, 'permission', errors);
+      requireString(command, 'justification', errors);
+      optionalResource(command, 'resource', errors);
+      return;
+    case 'RecordPermissionDecision':
+      requireEntityId(command, 'requestId', errors);
+      if (command.outcome !== 'ALLOW' && command.outcome !== 'DENY') {
+        errors.push('outcome must be ALLOW or DENY');
+      }
+      requireEntityId(command, 'expectedPreviousDecisionId', errors);
+      requireNamespacedName(command, 'reasonCode', errors);
+      optionalString(command, 'reason', errors);
+      return;
     case 'RetryTask':
       requireEntityId(command, 'taskId', errors);
       requirePositiveInteger(command, 'expectedTaskRevision', errors);
@@ -152,6 +170,23 @@ function requireString(record: Record<string, unknown>, key: string, errors: str
   if (typeof record[key] !== 'string') errors.push(`${key} must be a string`);
 }
 
+function optionalString(record: Record<string, unknown>, key: string, errors: string[]): void {
+  if (record[key] !== undefined && typeof record[key] !== 'string') {
+    errors.push(`${key} must be a string when present`);
+  }
+}
+
+function requireNamespacedName(
+  record: Record<string, unknown>,
+  key: string,
+  errors: string[],
+): void {
+  const value = record[key];
+  if (typeof value !== 'string' || value.length > 128 || !NAMESPACED_NAME_PATTERN.test(value)) {
+    errors.push(`${key} must be a NamespacedName`);
+  }
+}
+
 function requireStringArray(record: Record<string, unknown>, key: string, errors: string[]): void {
   const value = record[key];
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
@@ -195,6 +230,25 @@ function requireEvidenceArray(
   const value = record[key];
   if (!Array.isArray(value) || value.some((entry) => !isRecord(entry))) {
     errors.push(`${key} must be an array of EvidenceRef-shaped objects`);
+  }
+}
+
+function optionalResource(record: Record<string, unknown>, key: string, errors: string[]): void {
+  const value = record[key];
+  if (value === undefined) {
+    return;
+  }
+  if (!isRecord(value)) {
+    errors.push(`${key} must be a ResourceRef-shaped object when present`);
+    return;
+  }
+  if (
+    typeof value.type !== 'string' ||
+    value.type.length > 128 ||
+    !NAMESPACED_NAME_PATTERN.test(value.type) ||
+    !isProtocolEntityId(value.id)
+  ) {
+    errors.push(`${key} must be a ResourceRef-shaped object when present`);
   }
 }
 

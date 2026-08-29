@@ -25,6 +25,8 @@ const schemaRefs: Record<CanonicalDomainTarget, string> = {
   Task: 'urn:mindrail:schema:domain:v1:task',
   Lease: 'urn:mindrail:schema:domain:v1:lease',
   Checkpoint: 'urn:mindrail:schema:domain:v1:checkpoint',
+  PermissionRequest: 'urn:mindrail:schema:domain:v1:permission-request',
+  PermissionDecision: 'urn:mindrail:schema:domain:v1:permission-decision',
   Reason: 'urn:mindrail:schema:domain:v1:common#/$defs/Reason',
 };
 
