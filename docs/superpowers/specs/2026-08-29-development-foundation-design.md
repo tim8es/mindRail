@@ -2,58 +2,46 @@
 
 ## Status
 
-Proposed for implementation after maintainer review.
+**Approved for implementation on 2026-08-29.** Implementation is tracked in draft PR #1.
+
+This design is an implementation artifact. `AGENTS.md`, accepted ADRs, and `docs/CURRENT_STATE.md` outrank it where later evidence or accepted decisions refine an assumption.
 
 ## Purpose
 
-The first MindRail iteration is not the orchestrator runtime itself. It is the repository and engineering foundation that makes every subsequent human or agent contribution faster, more consistent, auditable, and easier to review.
+The first MindRail iteration is not the orchestrator runtime. It is the repository and engineering foundation that makes every later human or agent contribution faster, consistent, auditable, and reviewable without relying on chat history.
 
-The repository is intentionally empty today, so this iteration establishes the authoritative project structure before product code creates legacy constraints.
-
-## Product context
-
-MindRail is a vendor-neutral control plane for autonomous AI agents. Its long-term architecture separates:
-
-- declarative, versioned policy and project configuration;
-- runtime coordination state;
-- agent-facing protocols;
-- integrations and adapters;
-- optional reasoning providers.
-
-The reference implementation will target TypeScript and Cloudflare, while the core contracts must remain portable to other runtimes and providers.
+MindRail is intended to become a vendor-neutral control plane for autonomous AI agents. The long-term system separates declarative/versioned control, runtime coordination state, agent-facing protocols, provider adapters, and optional reasoning providers.
 
 ## Goals
 
-This foundation must:
+The foundation must:
 
-1. Give any new coding agent a deterministic bootstrap path into the repository.
-2. Make project state, architecture, decisions, constraints, and roadmap discoverable without reading chat history.
-3. Create an ADR-first process for architectural decisions.
-4. Establish senior-level contribution and review standards before implementation begins.
-5. Add automated quality gates that future code cannot bypass accidentally.
-6. Keep the initial repository minimal: no speculative packages, services, databases, or framework abstractions.
-7. Prepare the repository for future public distribution without prematurely enabling community-facing machinery that is not yet needed.
+1. give a fresh coding-agent session a deterministic low-context bootstrap path;
+2. make current state, architecture, decisions, constraints, and roadmap discoverable in-repository;
+3. establish ADR-first governance for persistent architectural decisions;
+4. define engineering, contribution, security, and evidence standards before product implementation;
+5. provide one canonical TypeScript quality gate;
+6. remain minimal — no speculative runtime packages, cloud services, databases, or framework abstractions;
+7. prepare for future public distribution without adding community/release machinery before it is needed.
 
 ## Non-goals
 
-This iteration does not implement:
+This slice does **not** implement:
 
 - the MindRail control-plane API;
-- Goal, Task, Agent, Session, Lease, Permission, or Event runtime models;
+- Goal, Task, Agent, Session, Lease, Permission, Checkpoint, or Event runtime contracts;
 - Cloudflare Workers, Durable Objects, D1, or R2;
-- MCP or HTTP agent protocols;
-- GitHub, Google Sheets, ChatGPT, Codex, or other runtime adapters;
+- MCP/HTTP orchestration protocols;
+- GitHub, Google Sheets, ChatGPT, Codex, or other product adapters;
 - a web UI;
-- LLM/provider abstractions;
+- an LLM/provider framework;
 - production deployment.
 
 ## Repository model
 
-The repository should begin as a modular monorepo, not a monolith and not a microservice system.
+Start as a modular monorepo repository, not a monolithic application and not a microservice system. Only directories with current value are created. Future `packages/`, `apps/`, `adapters/`, and `integrations/` directories are introduced by the first implementation slice that needs them.
 
-Only directories with immediate value are created. Future `packages/`, `apps/`, `adapters/`, and `integrations/` directories should be introduced by the implementation slice that first needs them.
-
-Initial structure:
+Foundation structure:
 
 ```text
 mindRail/
@@ -70,11 +58,14 @@ mindRail/
 ├── prettier.config.mjs
 ├── .editorconfig
 ├── .gitignore
+├── src/
+│   └── foundation.ts
+├── test/
+│   └── foundation.test.ts
 ├── docs/
 │   ├── 00_PROJECT_INDEX.md
 │   ├── CURRENT_STATE.md
-│   ├── architecture/
-│   │   └── 01_SYSTEM_OVERVIEW.md
+│   ├── architecture/01_SYSTEM_OVERVIEW.md
 │   ├── adr/
 │   │   ├── README.md
 │   │   ├── ADR-0001-system-boundaries.md
@@ -83,181 +74,86 @@ mindRail/
 │   │   ├── ENGINEERING_STANDARDS.md
 │   │   ├── AGENT_WORKFLOW.md
 │   │   └── REVIEW_CHECKLIST.md
-│   └── roadmap/
-│       └── V0_1.md
+│   └── roadmap/V0_1.md
 └── .github/
     ├── ISSUE_TEMPLATE/
     │   ├── bug.yml
     │   ├── feature.yml
     │   └── architecture.yml
     ├── PULL_REQUEST_TEMPLATE.md
-    └── workflows/
-        └── quality.yml
+    └── workflows/quality.yml
 ```
 
-## Authoritative-document hierarchy
+## Authority and agent bootstrap
 
 Agents must not treat all Markdown as equally authoritative.
 
-The repository will define the following precedence:
+Precedence:
 
-1. `AGENTS.md` — repository execution contract for coding agents.
-2. Accepted ADRs — binding architecture and policy decisions.
-3. `docs/CURRENT_STATE.md` — factual description of what exists now.
-4. `docs/architecture/*` — current system architecture derived from accepted ADRs.
-5. `docs/roadmap/*` — planned work; never evidence that functionality exists.
-6. `README.md` — public-facing overview; useful but not authoritative over ADRs/current state.
+1. `AGENTS.md` — repository execution contract;
+2. accepted ADRs — binding architecture/policy decisions;
+3. `docs/CURRENT_STATE.md` — factual implemented/verification state;
+4. `docs/architecture/*` — architecture derived from ADRs;
+5. `docs/roadmap/*` — future intent only;
+6. `README.md` — public overview.
 
-If documents conflict, the higher-precedence source wins and the inconsistency must be corrected.
+Design specs and implementation plans support a change but do not outrank the sources above.
 
-## AGENTS.md contract
+A new coding agent is instructed to read the project index, current state, relevant accepted ADRs, then inspect current repository evidence. `AGENTS.md` remains intentionally short so this bootstrap does not become a permanent token tax.
 
-`AGENTS.md` is the key development accelerator.
-
-Every coding agent must be instructed to:
-
-1. Read `docs/00_PROJECT_INDEX.md`.
-2. Read `docs/CURRENT_STATE.md`.
-3. Read accepted ADRs relevant to the task.
-4. Inspect current repository state rather than trusting historical summaries.
-5. Make the smallest coherent change that satisfies the task.
-6. Avoid speculative abstractions and premature framework adoption.
-7. Add or update tests before claiming behavioral work complete.
-8. Never report an unexecuted check as passing.
-9. Update authoritative documentation when implementation changes current reality.
-10. Stop and propose an ADR before implementing a new persistent architectural concept or breaking an accepted system boundary.
-11. Prefer isolated branches/worktrees for substantial changes.
-12. Report evidence: commands executed, test results, limitations, and unverified platform claims.
-
-The file must remain short enough to be loaded by default without materially increasing agent context cost.
-
-## Project index
-
-`docs/00_PROJECT_INDEX.md` is a routing document, not a knowledge dump.
-
-It tells humans and agents where to find:
-
-- current state;
-- architecture;
-- accepted ADRs;
-- roadmap;
-- engineering standards;
-- agent workflow;
-- security policy;
-- contribution rules.
-
-Its purpose is to reduce context discovery cost.
+Agents must make the smallest coherent change, avoid speculative abstractions, never claim an unexecuted check passed, update repository truth when it changes, and stop for ADR review before introducing a new persistent architectural/security/storage/protocol boundary.
 
 ## Current-state discipline
 
-`docs/CURRENT_STATE.md` must distinguish clearly between:
+`docs/CURRENT_STATE.md` distinguishes:
 
 - implemented and verified;
 - implemented but not runtime-verified;
 - planned;
-- externally blocked.
+- externally blocked/pending evidence.
 
-Planned architecture must never be described as existing functionality.
-
-Every substantial implementation PR should update this file if the factual repository capability changes.
+Roadmap text is never evidence of implementation. A substantial PR updates current state whenever factual capability or verification status changes.
 
 ## ADR process
 
-Architecture decisions that affect persistent contracts, security boundaries, storage authority, protocol semantics, licensing, compatibility guarantees, or deployment topology require ADRs.
+ADRs are required for persistent contracts, security/trust boundaries, storage authority, protocol semantics, licensing/governance, compatibility guarantees, or deployment topology that affects core boundaries.
 
-ADR states:
-
-- Proposed
-- Accepted
-- Superseded
-- Rejected
-
-Each ADR includes:
-
-- context;
-- decision;
-- alternatives considered;
-- consequences;
-- compatibility/migration implications where relevant.
-
-ADR numbering is monotonic. Accepted ADRs are immutable except for typo-level corrections; changed decisions are recorded by a superseding ADR.
-
-## Initial ADRs
+States are `Proposed`, `Accepted`, `Superseded`, and `Rejected`. Accepted ADR meaning is immutable; changed decisions receive a new superseding ADR.
 
 ### ADR-0001 — System boundaries
 
-Captures the architecture already agreed in design discussions:
-
-- MindRail is a vendor-neutral control plane/protocol with a reference implementation.
-- Declarative configuration and runtime state are separate concerns.
-- Git is the versioned source of declarative policy/configuration, not the operational task database.
-- Runtime coordination must remain behind interfaces so Cloudflare is a reference deployment, not a protocol dependency.
-- Agents are executors/clients, not the system of record.
-- Permission decisions are policy-driven and deterministic by default; an LLM may propose actions but does not unilaterally mint authority.
+Records that MindRail is vendor-neutral; declarative configuration and operational state are separate authorities; Git is declarative/versioned control rather than the operational task database; agents are clients rather than the system of record; permission authority is deterministic/policy-driven by default; and Cloudflare/GitHub remain replaceable reference choices.
 
 ### ADR-0002 — Licensing model
 
-Records the approved direction:
+Records the approved BUSL-1.1 direction and is authoritative over the earlier licensing assumptions that led to this design.
 
-- Business Source License 1.1 for current releases;
-- source-available rather than claiming OSI Open Source status during the BSL period;
-- free development, testing, research, personal/self-hosted use and internal business use should remain possible under the Additional Use Grant;
-- commercial redistribution or offering MindRail itself as a competing hosted/managed service requires a commercial license from the rights holder;
-- each BSL release must define a Change Date and Change License;
-- target Change License: AGPL-3.0-or-later unless superseded by a later accepted ADR;
-- contribution policy must preserve the project's ability to dual-license future community contributions, with CLA/DCO mechanics finalized before accepting external contributions.
+Key points:
 
-The exact Additional Use Grant language is a legal-text implementation detail and must be written conservatively and reviewed before the repository becomes public.
+- MindRail is `source-available under BUSL-1.1` during the BSL period, not OSI Open Source;
+- the Additional Use Grant is intended to allow development, testing, research, personal/self-hosted production use, and internal business production use;
+- competing hosted/managed/SaaS production use of substantially equivalent MindRail control-plane functionality is outside that Additional Use Grant and requires separate commercial rights;
+- **BUSL-1.1 does not create a blanket prohibition on redistribution or every form of commercialization** — its standard terms already grant redistribution rights subject to BSL;
+- initial Change License direction is `AGPL-3.0-or-later` and the Change Date/project parameters require legal confirmation before public release;
+- contribution/dual-licensing mechanics require a separate governance decision before accepting external contributors.
 
-## Public documentation
-
-### README
-
-The README should explain, without hype:
-
-- the problem: autonomous agents still lack a shared external control plane;
-- the MindRail model: goal -> coordination -> agent execution -> evidence -> continue/escalate;
-- what exists today versus roadmap;
-- why the project is vendor-neutral;
-- status: early/private development;
-- license status accurately as BSL/source-available.
-
-It must not claim capabilities that are not implemented.
-
-### CONTRIBUTING
-
-Initially documents the expected workflow even while the repository remains private:
-
-- issue/ADR before significant architecture changes;
-- branch naming;
-- conventional commits;
-- test and documentation expectations;
-- review standards;
-- licensing/contribution notice.
-
-### SECURITY
-
-Defines responsible reporting and states the intended security posture: least privilege, no implicit credential propagation to agents, auditable permission decisions, and no security claims without verification.
+If the project later requires a broader ban on commercialization than BUSL can provide, ADR-0002 must be superseded rather than attempting to add an invalid restriction to the BSL Additional Use Grant.
 
 ## Engineering baseline
 
-The foundation will establish only ecosystem-level tooling needed by future TypeScript work.
+Only ecosystem-level tooling needed by future TypeScript work is selected:
 
-### Runtime/tool choices
+- Node.js 24 active-LTS line for the current foundation;
+- TypeScript strict mode;
+- pnpm pinned through `package.json`;
+- Vitest;
+- ESLint flat config;
+- Prettier;
+- GitHub Actions.
 
-- Node.js: current active LTS line, pinned in `package.json` engines once implementation verifies the exact supported range.
-- TypeScript: strict mode.
-- Package manager: pnpm with repository-managed version declaration.
-- Test runner: Vitest.
-- Lint: ESLint flat config.
-- Formatting: Prettier.
-- CI: GitHub Actions.
+No production framework is selected.
 
-No production framework is selected in this slice.
-
-### Root scripts
-
-The repository should converge on these stable commands:
+Stable root commands:
 
 ```text
 pnpm format:check
@@ -268,106 +164,63 @@ pnpm test:coverage
 pnpm check
 ```
 
-`pnpm check` is the local equivalent of the required CI quality gate.
+`pnpm check` is the canonical aggregate local/CI quality gate.
 
-## Quality gate
+The small `src/foundation.ts` + smoke test exists only to prove that lint/typecheck/test wiring is executable; it must explicitly report that product runtime is not implemented.
 
-`.github/workflows/quality.yml` runs on pull requests and pushes to `main`.
+## Quality and CI
 
-It should:
+The permanent `Quality` workflow runs on pull requests and pushes to `main` and must:
 
-1. install the pinned Node/pnpm environment;
-2. install dependencies with a frozen lockfile;
-3. run formatting checks;
-4. run lint;
-5. run TypeScript type checking;
-6. run tests;
+1. use least-privilege read-only repository permissions;
+2. pin third-party/GitHub Actions by immutable commit where practical;
+3. install the pinned Node/pnpm toolchain;
+4. require a committed lockfile;
+5. install with a frozen lockfile;
+6. run `pnpm check`;
 7. fail on any failed step.
 
-Coverage thresholds should not be invented before product code exists. A threshold is introduced with the first behavioral package and documented deliberately.
+Coverage thresholds are deliberately deferred until behavioral product code exists.
+
+A CI/test check is never described as passing unless it actually executed. Repository/config syntax inspection is useful evidence but is not equivalent to executing Node, pnpm, ESLint, TypeScript, Vitest, or GitHub-hosted runner behavior.
 
 ## Review model
 
-Every substantial change should be reviewable against explicit evidence.
+The PR template requires purpose, scope, ADR impact, checks actually executed, documentation impact, security/permission impact, and known/unverified limitations.
 
-The PR template asks for:
+The review checklist rejects hidden scope expansion, speculative abstractions, unsupported success claims, roadmap-as-reality documentation, architecture drift without ADRs, broad permissions without policy rationale, and dependencies without a current need.
 
-- purpose;
-- scope;
-- architecture/ADR impact;
-- tests/checks actually executed;
-- documentation changes;
-- security/permission impact;
-- known limitations or unverified claims.
-
-The review checklist rejects:
-
-- hidden scope expansion;
-- speculative abstractions;
-- claims unsupported by executed verification;
-- docs that describe roadmap items as implemented;
-- architectural changes without ADR coverage;
-- broad agent permissions without an explicit policy rationale.
-
-## Issue templates
-
-The initial templates should distinguish:
-
-- bug: observed behavior with reproduction/evidence;
-- feature: user/problem/value-oriented proposal;
-- architecture: a decision that may require an ADR.
-
-The templates are intentionally short so contributors and agents will actually use them.
-
-## Versioning and changelog
-
-Before the first product package exists, MindRail uses `0.x` development versioning.
-
-`CHANGELOG.md` follows a human-readable Keep-a-Changelog-style structure. Automated release tooling is deferred until there is something releasable.
-
-## Licensing implementation constraints
-
-The foundation may add the official BSL 1.1 license text and project parameters, but must not invent a bespoke license pretending to be BSL.
-
-Repository wording must consistently say `source-available under BSL 1.1` until the Change License takes effect for a given release.
-
-Commercial-license contact mechanics may initially point to the repository maintainer and should be replaceable later by a project/company contact.
+Issue templates stay short and distinguish bugs (observed reproducible behavior), features (problem/outcome/value), and architecture decisions (likely ADR work).
 
 ## Security and dependency discipline
 
-- Prefer no dependency over a dependency for repository-only tooling.
-- Runtime dependencies require a concrete implementation need.
-- Dev dependencies must have a clear quality/tooling purpose.
-- No secrets are committed.
-- CI receives only minimum permissions required for checks.
-- Pull-request CI must not obtain production credentials.
-- Dependency update automation is deferred until the initial dependency graph exists.
+- prefer no dependency over a dependency when the current slice does not need one;
+- runtime dependencies require concrete product need;
+- dev dependencies require concrete quality/tooling value;
+- no credentials or secrets in source, logs, fixtures, prompts, or artifacts;
+- pull-request CI receives no production credentials;
+- dependency automation and release automation are deferred until they solve a real maintenance/release problem.
 
-## Test strategy for this iteration
+## Licensing implementation constraints
 
-Because this slice primarily establishes repository machinery, verification consists of:
+Use the standard BUSL-1.1 text plus project parameters; do not invent a bespoke license while calling it BSL. Repository wording remains source-available until the applicable Change License takes effect.
 
-- clean dependency installation;
-- all root quality commands executing successfully;
-- CI configuration syntax/behavior validated through an actual GitHub Actions run once pushed;
-- documentation-link checks or equivalent lightweight validation if introduced;
-- inspection that agent/bootstrap documentation has no contradictory authority rules.
+The exact Additional Use Grant, licensor identity, Change License compatibility, and future commercial/contributor mechanics are a **pre-public-release legal gate**.
 
-No test or CI check may be called passing unless it actually executed.
+## Verification strategy
 
-## Implementation order
+Foundation verification requires evidence from the real consumers where available:
 
-1. Add repository governance and authoritative documentation.
-2. Add and record licensing decision.
-3. Add minimal Node/pnpm/TypeScript quality-tooling baseline.
-4. Add agent workflow and review contracts.
-5. Add GitHub issue/PR templates.
-6. Add CI quality workflow.
-7. Execute all local/verifiable quality checks available in the implementation environment.
-8. Update `CURRENT_STATE.md` with only verified outcomes.
+- dependency installation from a committed lockfile;
+- formatting, lint, typecheck, tests, coverage command, and aggregate `pnpm check`;
+- an actual GitHub Actions job executing on a runner;
+- documentation/authority reconciliation;
+- lightweight static syntax checks as supplemental evidence only.
+
+When the environment blocks a check, record it as unverified rather than replacing it with an inference.
 
 ## Exit criteria
 
-This foundation is complete when a fresh coding-agent session can enter the repository, read a small deterministic set of files, understand current reality and architecture constraints, make a scoped change, run one canonical quality command, and produce a PR with auditable evidence — without relying on prior chat context.
+The foundation is complete only when a fresh coding agent can enter the repository, discover the authoritative context cheaply, understand current reality and constraints, make a scoped change, run the canonical quality gate, and produce review evidence without relying on chat history.
 
-At that point the next architectural slice can define MindRail's domain contracts and agent/control-plane protocol.
+At present the repository structure/workflow portion is implemented in draft PR #1, while executable quality-gate exit criteria remain blocked by GitHub runner assignment and the missing real-generated `pnpm-lock.yaml`; `docs/CURRENT_STATE.md` is authoritative for the exact status.

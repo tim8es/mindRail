@@ -1,0 +1,36 @@
+name: Architecture decision
+description: Propose a change to a persistent contract or system boundary
+title: "adr: "
+labels: []
+body:
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision needed
+      description: What architectural decision cannot safely remain an implementation detail?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context and forces
+      description: Current constraints, evidence, and relevant accepted ADRs.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: List credible options and their trade-offs.
+    validations:
+      required: true
+  - type: dropdown
+    id: adr
+    attributes:
+      label: ADR expected?
+      options:
+        - "Yes — this changes a persistent contract/boundary"
+        - "Unclear — decide during review"
+        - "No — explain why this is an implementation detail"
+    validations:
+      required: true
