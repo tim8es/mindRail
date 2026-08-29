@@ -73,6 +73,18 @@
         },
         "not": { "required": ["policyRef"] }
       }
+    },
+    {
+      "if": {
+        "properties": { "sequence": { "const": 1 } },
+        "required": ["sequence"]
+      },
+      "then": {
+        "not": { "required": ["supersedesDecisionId"] }
+      },
+      "else": {
+        "required": ["supersedesDecisionId"]
+      }
     }
   ]
 }
