@@ -28,12 +28,14 @@
 ### Task 1: Persistence receipt parity for the first durable loop
 
 **Files:**
+
 - Modify: `src/persistence/ports.ts`
 - Modify: `src/persistence/cloudflare/d1-runtime-persistence.ts`
 - Test: `test/persistence/d1-runtime-persistence.test.ts`
 - Test: `test/persistence/d1-runtime-persistence-invariants.test.ts`
 
 **Interfaces:**
+
 - Consumes: existing `CommandReceiptInput`, `MutationCommitResult<T>`, D1 coordinator and batch transaction primitives.
 - Produces:
   - `createAgent({ agent, receipt?, auditEvent? }): Promise<MutationCommitResult<Agent>>`
@@ -87,11 +89,13 @@ Commit message: `feat: add receipt parity to durable mutation ports`
 ### Task 2: Supported runtime snapshot rehydration
 
 **Files:**
+
 - Modify: `src/runtime/in-memory-control-plane.ts`
 - Modify/Create: `src/runtime/state-rehydration.ts` if keeping reconstruction logic outside the large control-plane file is cleaner.
 - Test: `test/runtime/runtime-rehydration.test.ts`
 
 **Interfaces:**
+
 - Consumes: `WorkspaceStateSnapshot` shape or a runtime-neutral equivalent with Workspace/Goals/Tasks/Agents/Sessions/Leases/Checkpoints/Permission records/fencing counters.
 - Produces a supported constructor/factory such as:
 
@@ -142,12 +146,14 @@ Commit message: `feat: support canonical runtime state rehydration`
 ### Task 3: Durable application dispatcher and deterministic receipt replay
 
 **Files:**
+
 - Create: `src/application/durable-dispatcher.ts`
 - Create: `src/application/durable-errors.ts` if error mapping warrants a separate unit.
 - Modify: `src/application/ports.ts` only if a composition dependency type is needed.
 - Test: `test/application/durable-dispatcher.test.ts`
 
 **Interfaces:**
+
 - Consumes:
   - `ApplicationDispatcher`
   - `DurableRuntimePersistence`
@@ -210,12 +216,14 @@ Commit message: `feat: add durable application dispatcher`
 ### Task 4: Durable query surface for restart verification and work acquisition
 
 **Files:**
+
 - Modify: `src/persistence/ports.ts`
 - Modify: `src/persistence/cloudflare/d1-runtime-persistence.ts`
 - Modify: `src/application/durable-dispatcher.ts`
 - Test: `test/application/durable-queries.test.ts`
 
 **Interfaces:**
+
 - Add explicit persistence reads needed by application queries. Prefer bounded semantic methods over generic SQL access.
 - Required durable queries:
   - `GetWorkspace`
@@ -255,11 +263,13 @@ Commit message: `feat: expose durable application queries`
 ### Task 5: Restart-safe HTTP/application E2E
 
 **Files:**
+
 - Create: `test/e2e/durable-http-control-plane-e2e.test.ts`
 - Reuse: `test/persistence/d1-sqlite-harness.ts`
 - Reuse/extend: `test/persistence/setup.ts`
 
 **Interfaces:**
+
 - Consumes `createHttpTransport(createDurableApplicationDispatcher(...))` over a real SQLite file implementing the D1-like port.
 - Produces executable evidence for restart safety.
 
@@ -319,12 +329,14 @@ Commit message: `test: prove durable application restart semantics`
 ### Task 6: Full verification, documentation reconciliation, PR and post-merge gate
 
 **Files:**
+
 - Modify: `docs/CURRENT_STATE.md`
 - Modify: `docs/roadmap/V0_1.md`
 - Modify: `CHANGELOG.md`
 - Review: `.github/workflows/quality.yml`
 
 **Interfaces:**
+
 - Consumes all previous tasks.
 - Produces a non-draft PR against `main` and merge evidence.
 

@@ -5,10 +5,7 @@ import { join } from 'node:path';
 import type { Agent, Checkpoint, PermissionDecision, Session } from '@mindrail/contracts';
 import { describe, expect, it } from 'vitest';
 
-import type {
-  CommandReceiptInput,
-  MutationCommitResult,
-} from '../../src/persistence/ports.ts';
+import type { CommandReceiptInput, MutationCommitResult } from '../../src/persistence/ports.ts';
 import {
   agent,
   checkpoint,
@@ -194,7 +191,12 @@ describe('durable mutation receipt parity', () => {
     const commandReceipt = receipt(
       'cmd-human-decision',
       'fp-human-decision',
-      { protocolVersion: '0.1', commandId: 'cmd-human-decision', replayed: false, result: decision },
+      {
+        protocolVersion: '0.1',
+        commandId: 'cmd-human-decision',
+        replayed: false,
+        result: decision,
+      },
       'ws-a',
       'RecordPermissionDecision',
     );
