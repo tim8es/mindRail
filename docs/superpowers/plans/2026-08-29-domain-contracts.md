@@ -71,6 +71,7 @@
 ## Task 1 — Contract toolchain, common primitives, and Workspace
 
 **Files:**
+
 - Modify: `package.json`
 - Modify: `pnpm-workspace.yaml`
 - Modify: `pnpm-lock.yaml` through pinned pnpm only
@@ -82,6 +83,7 @@
 - Create: `schemas/domain/v1/workspace.schema.json`
 
 **Interfaces:**
+
 - Produces: `loadDomainSchemas(): Promise<Array<Record<string, unknown>>>`
 - Produces: `createDomainAjv(): Promise<{ ajv: Ajv2020; schemas: Array<Record<string, unknown>> }>`
 - Produces canonical `$defs`: `EntityId`, `UtcDateTime`, `NamespacedName`, `ActorRef`, `ResourceRef`, `EvidenceRef`, `PolicyRef`, `Reason`.
@@ -312,12 +314,14 @@ Commit message: `feat: establish canonical domain schema toolchain`
 ## Task 2 — Goal and Task contracts
 
 **Files:**
+
 - Create: `schemas/domain/v1/goal.schema.json`
 - Create: `schemas/domain/v1/task.schema.json`
 - Create: `packages/contracts/test/fixtures/v1.ts` with initial Workspace/Goal/Task fixtures
 - Create: `packages/contracts/test/fixtures.test.ts`
 
 **Interfaces:**
+
 - Produces top-level schemas `urn:mindrail:schema:domain:v1:goal` and `...:task`.
 - Produces fixture catalogue keyed by schema `$id`.
 
@@ -326,8 +330,12 @@ Commit message: `feat: establish canonical domain schema toolchain`
 In `packages/contracts/test/fixtures/v1.ts`, export:
 
 ```ts
-export const validFixtures: Record<string, unknown[]> = { /* populated with exact minimal records */ };
-export const invalidFixtures: Record<string, unknown[]> = { /* each item intentionally violates one structural rule */ };
+export const validFixtures: Record<string, unknown[]> = {
+  /* populated with exact minimal records */
+};
+export const invalidFixtures: Record<string, unknown[]> = {
+  /* each item intentionally violates one structural rule */
+};
 ```
 
 Include at minimum:
@@ -397,12 +405,14 @@ Commit message: `feat: define goal and task contracts`
 ## Task 3 — Agent, Session, and Lease contracts
 
 **Files:**
+
 - Create: `schemas/domain/v1/agent.schema.json`
 - Create: `schemas/domain/v1/session.schema.json`
 - Create: `schemas/domain/v1/lease.schema.json`
 - Modify: `packages/contracts/test/fixtures/v1.ts`
 
 **Interfaces:**
+
 - Agent capabilities are exact `NamespacedName` strings.
 - Session references one Agent by `agentId`.
 - Lease references one Task and Session and carries `fencingToken`.
@@ -484,6 +494,7 @@ Commit message: `feat: define agent session and lease contracts`
 ## Task 4 — Checkpoint, permissions, and audit contracts
 
 **Files:**
+
 - Create: `schemas/domain/v1/checkpoint.schema.json`
 - Create: `schemas/domain/v1/permission-request.schema.json`
 - Create: `schemas/domain/v1/permission-decision.schema.json`
@@ -491,6 +502,7 @@ Commit message: `feat: define agent session and lease contracts`
 - Modify: `packages/contracts/test/fixtures/v1.ts`
 
 **Interfaces:**
+
 - Append-only records contain `createdAt` but no `revision` or `updatedAt`.
 - Permission decisions form a deterministic append-only chain through `sequence` and optional `supersedesDecisionId`.
 - Audit attributes are the only dynamic object surface and are flat/bounded.
@@ -620,6 +632,7 @@ Commit message: `feat: define checkpoint permission and audit contracts`
 ## Task 5 — Deterministic TypeScript generation and drift detection
 
 **Files:**
+
 - Create: `scripts/contracts/generate.mjs`
 - Create: `packages/contracts/src/generated/v1/*.ts`
 - Create: `packages/contracts/src/index.ts`
@@ -627,6 +640,7 @@ Commit message: `feat: define checkpoint permission and audit contracts`
 - Modify: `package.json`
 
 **Interfaces:**
+
 - CLI: `node scripts/contracts/generate.mjs` writes canonical generated files.
 - CLI: `node scripts/contracts/generate.mjs --check` compares generated content in memory with committed files and exits non-zero on drift.
 - Package barrel exports top-level generated domain types and selected common value-object types; it never defines handwritten domain shapes.
@@ -732,6 +746,7 @@ Commit message: `feat: generate TypeScript domain bindings`
 ## Task 6 — Final verification, docs reconciliation, and PR readiness
 
 **Files:**
+
 - Modify: `docs/adr/ADR-0003-domain-contracts-and-schema-authority.md`
 - Modify: `docs/superpowers/specs/2026-08-29-domain-contracts-design.md`
 - Modify: `docs/CURRENT_STATE.md`

@@ -4,7 +4,16 @@
   "title": "Agent",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "workspaceId", "revision", "createdAt", "updatedAt", "displayName", "status", "capabilities"],
+  "required": [
+    "id",
+    "workspaceId",
+    "revision",
+    "createdAt",
+    "updatedAt",
+    "displayName",
+    "status",
+    "capabilities"
+  ],
   "properties": {
     "id": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
     "workspaceId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },

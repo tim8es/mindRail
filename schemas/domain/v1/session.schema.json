@@ -4,7 +4,16 @@
   "title": "Session",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "workspaceId", "agentId", "revision", "createdAt", "updatedAt", "status", "lastSeenAt"],
+  "required": [
+    "id",
+    "workspaceId",
+    "agentId",
+    "revision",
+    "createdAt",
+    "updatedAt",
+    "status",
+    "lastSeenAt"
+  ],
   "properties": {
     "id": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
     "workspaceId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },

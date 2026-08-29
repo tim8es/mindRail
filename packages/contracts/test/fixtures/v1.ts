@@ -349,7 +349,9 @@ export const invalidFixtures: Record<string, unknown[]> = {
       actor: { type: 'agent', id: 'agent_1' },
       subject: { type: 'task', id: 'task_1' },
       correlationId: 'correlation_1',
-      attributes: Object.fromEntries(Array.from({ length: 17 }, (_, index) => [`key${index}`, index])),
+      attributes: Object.fromEntries(
+        Array.from({ length: 17 }, (_, index) => [`key${index}`, index]),
+      ),
     },
   ],
 };

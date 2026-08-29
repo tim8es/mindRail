@@ -4,7 +4,17 @@
   "title": "PermissionRequest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "workspaceId", "taskId", "sessionId", "leaseId", "fencingToken", "createdAt", "permission", "justification"],
+  "required": [
+    "id",
+    "workspaceId",
+    "taskId",
+    "sessionId",
+    "leaseId",
+    "fencingToken",
+    "createdAt",
+    "permission",
+    "justification"
+  ],
   "properties": {
     "id": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
     "workspaceId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },

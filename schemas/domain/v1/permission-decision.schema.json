@@ -4,7 +4,17 @@
   "title": "PermissionDecision",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "workspaceId", "requestId", "createdAt", "sequence", "outcome", "basis", "decidedBy", "reasonCode"],
+  "required": [
+    "id",
+    "workspaceId",
+    "requestId",
+    "createdAt",
+    "sequence",
+    "outcome",
+    "basis",
+    "decidedBy",
+    "reasonCode"
+  ],
   "properties": {
     "id": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
     "workspaceId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },

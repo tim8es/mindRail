@@ -4,7 +4,18 @@
   "title": "Lease",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "workspaceId", "taskId", "sessionId", "revision", "createdAt", "updatedAt", "status", "fencingToken", "expiresAt"],
+  "required": [
+    "id",
+    "workspaceId",
+    "taskId",
+    "sessionId",
+    "revision",
+    "createdAt",
+    "updatedAt",
+    "status",
+    "fencingToken",
+    "expiresAt"
+  ],
   "properties": {
     "id": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },
     "workspaceId": { "$ref": "urn:mindrail:schema:domain:v1:common#/$defs/EntityId" },

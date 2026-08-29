@@ -62,7 +62,9 @@ async function generateSources(): Promise<Map<string, string>> {
   const output = new Map<string, string>();
 
   for (const schemaName of schemaNames) {
-    const rawSchema = JSON.parse(await readFile(join(schemaDirectory, schemaName), 'utf8')) as JSONSchema;
+    const rawSchema = JSON.parse(
+      await readFile(join(schemaDirectory, schemaName), 'utf8'),
+    ) as JSONSchema;
     const generatorSchema = rewriteCommonRefs(rawSchema) as JSONSchema;
     const generated = await compile(generatorSchema, typeName(rawSchema, schemaName), {
       bannerComment,
@@ -87,7 +89,9 @@ async function generateSources(): Promise<Map<string, string>> {
 async function checkGenerated(sources: Map<string, string>): Promise<string[]> {
   let committedNames: string[] = [];
   try {
-    committedNames = (await readdir(generatedDirectory)).filter((name) => name.endsWith('.ts')).sort();
+    committedNames = (await readdir(generatedDirectory))
+      .filter((name) => name.endsWith('.ts'))
+      .sort();
   } catch (error) {
     if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
       throw error;
@@ -127,7 +131,9 @@ async function main() {
 
   await mkdir(generatedDirectory, { recursive: true });
   await Promise.all(
-    [...sources.entries()].map(([name, content]) => writeFile(join(generatedDirectory, name), content)),
+    [...sources.entries()].map(([name, content]) =>
+      writeFile(join(generatedDirectory, name), content),
+    ),
   );
 }
 
