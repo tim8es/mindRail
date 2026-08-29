@@ -6,7 +6,7 @@ MindRail is an early-stage, source-available project exploring a simple problem:
 
 MindRail aims to provide that control plane without making any single model vendor, agent runtime, cloud provider, or chat session the system of record.
 
-> **Status:** public early development. The orchestrator runtime is not implemented yet. The repository currently establishes architecture and engineering foundations.
+> **Status:** public early development. A deterministic in-memory control-plane vertical slice is implemented and verified. Durable persistence, permission execution, deployed HTTP/MCP transports, cloud runtime, and real agent integrations are still in development.
 
 ## Model
 
@@ -32,7 +32,7 @@ MindRail
     └── ask human only when policy requires it
 ```
 
-The long-term design separates:
+The design separates:
 
 - **declarative control** — versioned policy, roles, workflows, and project configuration;
 - **runtime coordination** — goals, tasks, sessions, leases, checkpoints, and decisions;
@@ -45,13 +45,22 @@ The long-term design separates:
 1. **Agents are clients, not the system of record.** A chat or CLI session may disappear without losing the project state.
 2. **Policy is explicit.** Permission decisions should be deterministic and auditable by default.
 3. **State is external to prompts.** Agents receive the minimum context needed for the current work.
-4. **Reference implementation is replaceable.** Cloudflare is a planned deployment target, not part of the protocol definition.
+4. **Reference implementation is replaceable.** Cloudflare is a deployment target for the reference implementation, not part of the protocol definition.
 5. **Evidence over claims.** A test or platform behavior is not considered verified until it actually ran.
 6. **YAGNI.** New abstractions enter the repository when a real slice needs them.
 
 ## What exists today
 
-See [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md) for the authoritative answer. Planned capabilities are documented separately and must not be interpreted as implemented functionality.
+The repository now contains:
+
+- canonical JSON Schema domain contracts and generated TypeScript bindings;
+- accepted runtime/concurrency and protocol v0.1 semantics;
+- a deterministic in-memory reference runtime for the first Goal → Task → Lease → Checkpoint → completion loop;
+- Lease recovery and fencing, protocol command idempotency, retry, and Task/Goal cancellation tests;
+- a replaceable Cloudflare persistence reference design;
+- reproducible TypeScript/Vitest quality tooling and GitHub Actions verification.
+
+See [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md) for the authoritative boundary between implemented and planned capabilities.
 
 ## Repository guide
 
@@ -70,9 +79,10 @@ The repository baseline targets Node.js 24 and pins pnpm through `package.json`.
 ```bash
 pnpm install --frozen-lockfile
 pnpm check
+pnpm test:coverage
 ```
 
-The foundation quality gate has been executed successfully on GitHub-hosted Ubuntu with Node 24 and the pinned pnpm version. Exact evidence and remaining limitations are recorded in `docs/CURRENT_STATE.md`.
+The quality gates have been executed successfully on GitHub-hosted Ubuntu with Node 24 and the pinned pnpm version. Exact evidence, test counts, coverage, and remaining limitations are recorded in `docs/CURRENT_STATE.md`.
 
 ## License
 
