@@ -15,22 +15,25 @@ The following facts are supported by repository state and executed GitHub Action
 - `@mindrail/contracts` provides deterministic generated TypeScript bindings. Generated drift, strict schema validation, fixtures, schema invariants, formatting, lint, and TypeScript checks are part of the repository quality gate.
 - The Cloudflare reference persistence mapping is documented under `docs/architecture/02_CLOUDFLARE_RUNTIME_PERSISTENCE.md`; it is a design, not a deployed persistence implementation.
 - A deterministic **in-memory local reference runtime vertical slice** exists under `src/runtime/` and consumes the canonical contracts package rather than redefining domain records.
+- The runtime requires a `CanonicalDomainValidator` admission seam. Workspace, Agent, Session, Goal, Task, Lease, and Checkpoint records are validated before authoritative insertion; external `Reason` values used by fail/cancel transitions are validated before state mutation. Reference tests wire this seam to the actual strict Draft 2020-12 schemas through the repository's existing dev-only Ajv tooling, so no third-party runtime dependency was added.
 - The local runtime currently supports direct Workspace bootstrap plus Agent registration, Session start, Goal/Task creation, Task claim/release/recovery, Checkpoints, Task completion/failure/retry/cancellation, Goal cancellation, dependency release, and automatic Goal success when all Tasks succeed.
 - Lease authority is separated from Task state. A running Task may temporarily have no effective Lease and may be recovered by a new Session.
-- Same-Session duplicate claim returns the current Lease without minting a new fencing token. Recovery after Lease release/expiry grants a strictly higher per-Task fencing token. Stale/revoked Lease authority cannot checkpoint or complete work.
+- Same-Session duplicate claim returns the current Lease without minting a new fencing token even when a semantic duplicate still carries the pre-claim Task revision. Recovery after Lease release/expiry grants a strictly higher per-Task fencing token. Rejected Lease admission does not advance the fencing counter. Stale/revoked Lease authority cannot checkpoint or complete work.
 - Capability requirements are checked at claim time, mutable operations use expected revisions where defined by the slice, and Task creation is rejected under a terminal Goal.
 - The implemented protocol dispatcher covers `CreateGoal`, `CreateTask`, `ClaimTask`, `RecordCheckpoint`, `CompleteTask`, `FailTask`, `RetryTask`, `CancelTask`, and `CancelGoal`.
-- Implemented protocol mutations use `(workspaceId, commandId)` as the in-memory idempotency key. Semantic fingerprints exclude `correlationId` and `causationId`; exact replay returns an immutable stored result/error snapshot; command-id reuse with different semantic intent returns `IDEMPOTENCY_CONFLICT`.
+- Controller-only protocol commands `RetryTask`, `CancelTask`, and `CancelGoal` admit human/system actors and reject agent actors with `ACTOR_NOT_AUTHORIZED` before mutation.
+- Implemented protocol mutations use `(workspaceId, commandId)` as the in-memory idempotency key. Semantic fingerprints exclude `correlationId` and `causationId`; exact replay returns an immutable stored result/error snapshot while reflecting the current retry's correlation id; command-id reuse with different semantic intent returns `IDEMPOTENCY_CONFLICT`.
 - `CancelTask` revokes its effective Lease when present. `CancelGoal` terminalizes the Goal, cancels its nonterminal Tasks, and revokes their effective Leases; stale completion is rejected afterward.
 - Root runtime code explicitly links to `@mindrail/contracts` with `workspace:*`; the frozen pnpm lockfile resolves it as the local workspace package.
 - GitHub Actions full-verification run `33254737970` on commit `57491f9b153a8163b927b0a811edabe4083068cb` passed frozen installation, Prettier, ESLint, strict TypeScript checks, generated-contract drift detection, the complete Vitest suite, `pnpm check`, and `pnpm test:coverage`.
-- That run reported **7/7 test files and 15/15 tests passing**. V8 coverage reported 83.79% statements, 63.85% branches, 96.36% functions, and 83.7% lines overall; `src/runtime` reported 82.68% statements and 82.58% lines. No repository-wide coverage threshold is claimed.
+- Canonical-admission GREEN run `33256111682` executed the focused schema-admission regressions, full `pnpm check`, and `pnpm test:coverage`. It reported **9/9 test files and 26/26 tests passing**. V8 reported 90.22% statements, 72.63% branches, 98.33% functions, and 90.17% lines overall; `src/runtime` reported 89.22% statements and 89.16% lines. No repository-wide coverage threshold is claimed.
 - Permanent `Quality` CI remains read-only (`contents: read`) and uses pinned GitHub-owned action commits.
 
 ## Implemented but not yet durable / externally integrated
 
 - Local runtime correctness is currently in-memory and single-process. It proves state-machine and protocol semantics but does not survive process restart.
 - Command receipts, Lease counters, Tasks, Goals, Checkpoints, Sessions, and other runtime state are not persisted yet.
+- The canonical validator is an injected core boundary; the current executable reference composition proving it against the real schemas lives in test tooling. Production/deployed composition still needs to provide the same canonical validation boundary.
 - Goal-level ordering is deterministic inside the synchronous local runtime. The future D1/Durable Objects reference implementation must independently prove the concurrency guarantees from ADR-0004 and the persistence design.
 - `Quality` is executable and green on verified branches, but issue #3 still tracks enabling the repository-level required merge gate on `main`.
 
@@ -38,7 +41,7 @@ The following facts are supported by repository state and executed GitHub Action
 
 - Complete the remaining protocol/runtime command surface needed for v0.1, including Session heartbeat/end, Lease renewal, block/resume, and permission commands.
 - Implement deterministic permission-policy evaluation and human decision handling.
-- Add a persistence interface and durable local/reference storage implementation with command receipts, audit events, revision/fencing guards, and restart recovery.
+- Add a persistence interface and durable local/reference storage implementation with command receipts, audit events, revision/fencing guards, canonical admission, and restart recovery.
 - Implement the Cloudflare Workers/Durable Objects/D1 reference deployment behind the vendor-neutral runtime interfaces.
 - Add transport adapters for HTTP and MCP without changing core lifecycle semantics.
 - Add GitHub integration and minimal Codex/ChatGPT/generic agent bootstrap paths.
