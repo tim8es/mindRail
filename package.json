@@ -11,7 +11,7 @@
   "packageManager": "pnpm@11.24.0",
   "scripts": {
     "format": "prettier --write .",
-    "format:check": "prettier --write . && git diff --exit-code -- test/transports",
+    "format:check": "prettier --check .",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.base.json && pnpm --filter @mindrail/contracts typecheck",
     "test": "vitest run",
