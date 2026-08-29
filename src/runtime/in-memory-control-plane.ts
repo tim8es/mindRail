@@ -54,6 +54,15 @@ export interface ClaimTaskInput {
   expectedTaskRevision: number;
 }
 
+export interface ReleaseLeaseInput {
+  workspaceId: string;
+  taskId: string;
+  sessionId: string;
+  leaseId: string;
+  fencingToken: number;
+  expectedLeaseRevision: number;
+}
+
 export interface RecordCheckpointInput {
   workspaceId: string;
   taskId: string;
@@ -234,9 +243,6 @@ export class InMemoryControlPlane {
     this.assertWorkspace(input.workspaceId);
     const task = this.requireTask(input.workspaceId, input.taskId);
     this.assertRevision(task.revision, input.expectedTaskRevision, `Task ${task.id}`);
-    if (task.status !== 'ready') {
-      throw new RuntimeError('INVALID_STATE_TRANSITION', `Task ${task.id} is not claimable.`);
-    }
 
     const session = this.requireActiveSession(input.workspaceId, input.sessionId);
     const agent = this.requireAgent(input.workspaceId, session.agentId);
@@ -246,7 +252,14 @@ export class InMemoryControlPlane {
 
     const existingLease = this.getEffectiveLease(task.id);
     if (existingLease) {
+      if (existingLease.sessionId === session.id) {
+        return { task: clone(task), lease: clone(existingLease) };
+      }
       throw new RuntimeError('CONFLICT', `Task ${task.id} already has an active Lease.`);
+    }
+
+    if (task.status !== 'ready' && task.status !== 'running') {
+      throw new RuntimeError('INVALID_STATE_TRANSITION', `Task ${task.id} is not claimable.`);
     }
 
     const timestamp = this.timestamp();
@@ -268,11 +281,25 @@ export class InMemoryControlPlane {
     this.leases.set(lease.id, lease);
     this.effectiveLeaseByTask.set(task.id, lease.id);
 
-    task.status = 'running';
-    task.revision += 1;
-    task.updatedAt = timestamp;
+    if (task.status === 'ready') {
+      task.status = 'running';
+      task.revision += 1;
+      task.updatedAt = timestamp;
+    }
 
     return { task: clone(task), lease: clone(lease) };
+  }
+
+  releaseLease(input: ReleaseLeaseInput): Lease {
+    this.assertWorkspace(input.workspaceId);
+    const { lease } = this.requireExecutorAuthority(input);
+    this.assertRevision(lease.revision, input.expectedLeaseRevision, `Lease ${lease.id}`);
+
+    lease.status = 'released';
+    lease.revision += 1;
+    lease.updatedAt = this.timestamp();
+    this.effectiveLeaseByTask.delete(input.taskId);
+    return clone(lease);
   }
 
   recordCheckpoint(input: RecordCheckpointInput): Checkpoint {
@@ -339,6 +366,7 @@ export class InMemoryControlPlane {
     if (!lease || lease.workspaceId !== workspaceId) {
       throw new RuntimeError('NOT_FOUND', `Lease ${leaseId} was not found.`);
     }
+    this.materializeLeaseExpiry(lease);
     return clone(lease);
   }
 
@@ -369,11 +397,12 @@ export class InMemoryControlPlane {
     if (!lease || lease.workspaceId !== input.workspaceId || lease.taskId !== task.id) {
       throw new RuntimeError('LEASE_NOT_ACTIVE', `Lease ${input.leaseId} is not active for Task ${task.id}.`);
     }
+    this.materializeLeaseExpiry(lease);
+    if (lease.status === 'expired') {
+      throw new RuntimeError('LEASE_EXPIRED', `Lease ${lease.id} has expired.`);
+    }
     if (lease.status !== 'active') {
       throw new RuntimeError('LEASE_NOT_ACTIVE', `Lease ${lease.id} is ${lease.status}.`);
-    }
-    if (Date.parse(lease.expiresAt) <= this.now().getTime()) {
-      throw new RuntimeError('LEASE_EXPIRED', `Lease ${lease.id} has expired.`);
     }
     if (lease.sessionId !== session.id) {
       throw new RuntimeError('LEASE_NOT_ACTIVE', `Lease ${lease.id} belongs to another Session.`);
@@ -448,11 +477,28 @@ export class InMemoryControlPlane {
       return undefined;
     }
     const lease = this.leases.get(leaseId);
-    if (!lease || lease.status !== 'active' || Date.parse(lease.expiresAt) <= this.now().getTime()) {
+    if (!lease) {
+      this.effectiveLeaseByTask.delete(taskId);
+      return undefined;
+    }
+    this.materializeLeaseExpiry(lease);
+    if (lease.status !== 'active') {
       this.effectiveLeaseByTask.delete(taskId);
       return undefined;
     }
     return lease;
+  }
+
+  private materializeLeaseExpiry(lease: Lease): void {
+    if (lease.status !== 'active' || Date.parse(lease.expiresAt) > this.now().getTime()) {
+      return;
+    }
+    lease.status = 'expired';
+    lease.revision += 1;
+    lease.updatedAt = this.timestamp();
+    if (this.effectiveLeaseByTask.get(lease.taskId) === lease.id) {
+      this.effectiveLeaseByTask.delete(lease.taskId);
+    }
   }
 
   private requireActiveSession(workspaceId: string, sessionId: string): Session {
