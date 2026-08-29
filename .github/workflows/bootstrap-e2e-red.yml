@@ -1,0 +1,31 @@
+name: Bootstrap protocol RED
+
+on:
+  push:
+    branches:
+      - feature/bootstrap-e2e-v0-1
+    paths:
+      - test/runtime/bootstrap-protocol.test.ts
+      - .github/workflows/bootstrap-e2e-red.yml
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - name: Install repository pnpm
+        run: npm install --global "$(node -p "require('./package.json').packageManager")"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Focused bootstrap protocol test
+        run: pnpm vitest run test/runtime/bootstrap-protocol.test.ts
