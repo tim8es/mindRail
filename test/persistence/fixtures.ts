@@ -73,11 +73,7 @@ export function agent(workspaceId = 'ws-a', id = 'agent-a'): Agent {
   };
 }
 
-export function session(
-  workspaceId = 'ws-a',
-  agentId = 'agent-a',
-  id = 'session-a',
-): Session {
+export function session(workspaceId = 'ws-a', agentId = 'agent-a', id = 'session-a'): Session {
   return {
     id,
     workspaceId,

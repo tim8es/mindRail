@@ -1,19 +1,27 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { D1RuntimePersistence } from '../../src/persistence/cloudflare/d1-runtime-persistence.ts';
 import { WorkspaceDurableObjectCoordinator } from '../../src/persistence/cloudflare/workspace-durable-object-coordinator.ts';
 import { persistenceCanonicalValidator } from './canonical-domain-validator.ts';
 import { SqliteD1Database } from './d1-sqlite-harness.ts';
 
-const migrationUrl = new URL('../../migrations/0001_runtime_persistence.sql', import.meta.url);
-const migrationSql = readFileSync(migrationUrl, 'utf8');
+const here = dirname(fileURLToPath(import.meta.url));
+const migrationDirectory = join(here, '../../migrations');
+const migrations = readdirSync(migrationDirectory)
+  .filter((name) => /^\d+.*\.sql$/.test(name))
+  .sort()
+  .map((name) => readFileSync(join(migrationDirectory, name), 'utf8'));
 
 export async function openPersistence(path: string): Promise<{
   database: SqliteD1Database;
   persistence: D1RuntimePersistence;
 }> {
   const database = new SqliteD1Database(path);
-  await database.exec(migrationSql);
+  for (const migration of migrations) {
+    await database.exec(migration);
+  }
   const persistence = new D1RuntimePersistence({
     database,
     coordinator: new WorkspaceDurableObjectCoordinator(),

@@ -52,11 +52,7 @@ class SqliteD1PreparedStatement implements D1PreparedStatementLike {
   ) {}
 
   bind(...values: unknown[]): D1PreparedStatementLike {
-    return new SqliteD1PreparedStatement(
-      this.database,
-      this.sql,
-      values.map(toSqlInputValue),
-    );
+    return new SqliteD1PreparedStatement(this.database, this.sql, values.map(toSqlInputValue));
   }
 
   async first<T>(): Promise<T | null> {
