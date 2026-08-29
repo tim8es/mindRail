@@ -44,9 +44,7 @@ Each ADR includes:
 
 ## Index
 
-| ADR                                                           | Status   | Decision                                      |
-| ------------------------------------------------------------- | -------- | --------------------------------------------- |
-| [ADR-0001](ADR-0001-system-boundaries.md)                     | Accepted | Core system boundaries and vendor neutrality  |
-| [ADR-0002](ADR-0002-licensing-model.md)                       | Accepted | BUSL-1.1 source-available licensing direction |
-| [ADR-0003](ADR-0003-domain-contracts-and-schema-authority.md) | Accepted | Domain contracts and JSON Schema authority    |
-| [ADR-0004](ADR-0004-control-plane-protocol-v0-1.md)           | Proposed | Control-plane protocol v0.1 semantics         |
+- [ADR-0001](ADR-0001-system-boundaries.md): **Accepted** — core system boundaries and vendor neutrality.
+- [ADR-0002](ADR-0002-licensing-model.md): **Accepted** — BUSL-1.1 source-available licensing direction.
+- [ADR-0003](ADR-0003-domain-contracts-and-schema-authority.md): **Accepted** — domain contracts and JSON Schema authority.
+- [ADR-0004](ADR-0004-control-plane-protocol-v0-1.md): **Proposed** — control-plane protocol v0.1 semantics.
