@@ -1,0 +1,33 @@
+name: Format rehydration test once
+
+on:
+  push:
+    branches:
+      - feature/durable-application-composition
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: feature/durable-application-composition
+          fetch-depth: 0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version-file: package.json
+          package-manager-cache: false
+      - run: npm install --global "$(node -p "require('./package.json').packageManager")"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prettier --write test/runtime/runtime-rehydration.test.ts
+      - run: git rm .github/workflows/format-rehydration-once.yml
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add test/runtime/runtime-rehydration.test.ts
+          git commit -m "style: format rehydration regression"
+          git push origin HEAD:feature/durable-application-composition
