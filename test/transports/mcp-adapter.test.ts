@@ -107,11 +107,7 @@ describe('MCP v0.1 semantic adapter', () => {
       unexpectedAuthority: 'allow',
     });
 
-    const response = await transport.callTool(
-      'mindrail_create_goal',
-      args,
-      principal,
-    );
+    const response = await transport.callTool('mindrail_create_goal', args, principal);
 
     expect(response).toEqual(
       expect.objectContaining({
@@ -128,11 +124,7 @@ describe('MCP v0.1 semantic adapter', () => {
     deps.authorize.mockResolvedValue(false);
     const transport = createMcpTransport(deps);
 
-    const response = await transport.callTool(
-      'mindrail_create_goal',
-      createGoalArgs(),
-      principal,
-    );
+    const response = await transport.callTool('mindrail_create_goal', createGoalArgs(), principal);
 
     expect(response).toEqual(
       expect.objectContaining({
@@ -147,11 +139,7 @@ describe('MCP v0.1 semantic adapter', () => {
     const transport = createMcpTransport(deps);
     const args = createGoalArgs({ causationId: 'cause-1' });
 
-    const response = await transport.callTool(
-      'mindrail_create_goal',
-      args,
-      principal,
-    );
+    const response = await transport.callTool('mindrail_create_goal', args, principal);
 
     expect(response).toEqual({
       protocolVersion: '0.1',
@@ -181,11 +169,7 @@ describe('MCP v0.1 semantic adapter', () => {
       correlationId: 'corr-1',
     };
 
-    const response = await transport.callTool(
-      'mindrail_get_workspace',
-      args,
-      principal,
-    );
+    const response = await transport.callTool('mindrail_get_workspace', args, principal);
 
     expect(response).toEqual({
       protocolVersion: '0.1',
@@ -218,11 +202,7 @@ describe('MCP v0.1 semantic adapter', () => {
       expectedSessionRevision: 1,
     };
 
-    const response = await transport.callTool(
-      'mindrail_heartbeat_session',
-      args,
-      principal,
-    );
+    const response = await transport.callTool('mindrail_heartbeat_session', args, principal);
 
     expect(response).toEqual(
       expect.objectContaining({
@@ -238,11 +218,9 @@ describe('MCP v0.1 semantic adapter', () => {
     deps.authorize.mockRejectedValue(error);
     const transport = createMcpTransport(deps);
 
-    const response = await transport.callTool(
-      'mindrail_create_goal',
-      createGoalArgs(),
-      { subject: 'mcp-principal-secret' },
-    );
+    const response = await transport.callTool('mindrail_create_goal', createGoalArgs(), {
+      subject: 'mcp-principal-secret',
+    });
     const serialized = JSON.stringify(response);
 
     expect(serialized).toContain('ACTOR_NOT_AUTHORIZED');
