@@ -13,6 +13,7 @@ const COMMANDS = new Set([
   'CreateTask',
   'ClaimTask',
   'RenewLease',
+  'ReleaseLease',
   'RecordCheckpoint',
   'CompleteTask',
   'FailTask',
@@ -81,6 +82,7 @@ function validateCommandFields(
       requirePositiveInteger(command, 'expectedTaskRevision', errors);
       return;
     case 'RenewLease':
+    case 'ReleaseLease':
       validateExecutorFields(command, errors);
       requirePositiveInteger(command, 'expectedLeaseRevision', errors);
       return;
