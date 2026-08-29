@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mindrail:schema:domain:v1:common",
+  "title": "MindRail Common Definitions",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "EntityId": {
+      "title": "EntityId",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "UtcDateTime": {
+      "title": "UtcDateTime",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "NamespacedName": {
+      "title": "NamespacedName",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+    },
+    "ActorRef": {
+      "title": "ActorRef",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["system", "human", "agent"]
+        },
+        "id": {
+          "$ref": "#/$defs/EntityId"
+        }
+      }
+    },
+    "ResourceRef": {
+      "title": "ResourceRef",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/NamespacedName"
+        },
+        "id": {
+          "$ref": "#/$defs/EntityId"
+        }
+      }
+    },
+    "EvidenceRef": {
+      "title": "EvidenceRef",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri"],
+      "properties": {
+        "uri": {
+          "type": "string",
+          "format": "uri-reference",
+          "maxLength": 2048
+        },
+        "mediaType": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "PolicyRef": {
+      "title": "PolicyRef",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "Reason": {
+      "title": "Reason",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "summary"],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/NamespacedName"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      }
+    }
+  }
+}
