@@ -1,0 +1,81 @@
+name: Agent task
+description: Create one executable task for GitHub Agent Continuity workers.
+title: "[Agent] "
+labels:
+  - agent:ready
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Define one coherent executable outcome. After creating the Issue, configure **GitHub native Issue dependencies** for real blockers; dependency text in the body is not authoritative.
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What observable result should exist when this task is successfully integrated?
+      placeholder: Describe one concrete delivered outcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List objective conditions that must all be true before the task may be completed.
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+    validations:
+      required: true
+
+  - type: textarea
+    id: primary_scope
+    attributes:
+      label: Primary scope
+      description: Paths this task is expected to own primarily. This is advisory coordination, not a filesystem lock.
+      placeholder: |
+        - src/example/**
+        - tests/example/**
+    validations:
+      required: false
+
+  - type: textarea
+    id: shared_scope
+    attributes:
+      label: Shared scope
+      description: Paths likely to overlap with other tasks and require integration care.
+      placeholder: |
+        - package.json
+        - src/index.ts
+    validations:
+      required: false
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      description: Commands/checks/evidence expected before integration. Agents must report what actually ran.
+      placeholder: |
+        - focused tests
+        - full project check
+        - manual behavior verification
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Human constraints and non-goals
+      description: Record actions the agent must not infer, architecture boundaries, explicit non-goals, or required human approvals.
+      placeholder: State only constraints relevant to this task.
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ### After Issue creation
+        1. Add native **blocked by / blocking** Issue relationships when dependencies exist.
+        2. Confirm `agent:ready` is present only when the task is actually eligible for initial claim.
+        3. Do not pre-create `agent/issue-N-gK` branches; generation refs are created by the claim protocol.
