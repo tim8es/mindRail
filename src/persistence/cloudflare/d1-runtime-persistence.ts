@@ -76,6 +76,12 @@ interface PendingPermissionRow {
   decision_json: string;
 }
 
+interface TaskExecutionViewRow {
+  task_json: string;
+  lease_json: string | null;
+  checkpoint_json: string | null;
+}
+
 export class D1RuntimePersistence implements DurableRuntimePersistence {
   private readonly database: D1DatabaseLike;
   private readonly coordinator: WorkspaceMutationCoordinator;
@@ -1805,25 +1811,51 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     now: string,
     sessionCutoff: string,
   ): Promise<TaskExecutionView | undefined> {
-    const task = await this.getTask(workspaceId, taskId);
-    if (!task) return undefined;
-    const nowMs = timestampMs(now, 'Task execution view now');
-    const cutoffMs = timestampMs(sessionCutoff, 'Task execution view session cutoff');
-    const lease =
-      task.status === 'running'
-        ? await this.getEffectiveActiveLease(workspaceId, taskId, nowMs, cutoffMs)
-        : undefined;
-    const latestCheckpoint = await this.readRecord<Checkpoint>(
-      `SELECT record_json FROM checkpoints
-       WHERE workspace_id = ? AND task_id = ?
-       ORDER BY created_at_ms DESC, id DESC LIMIT 1`,
+    const row = await this.first<TaskExecutionViewRow>(
+      `SELECT
+         t.record_json AS task_json,
+         CASE WHEN t.status = 'running' THEN (
+           SELECT l.record_json
+           FROM leases l
+           JOIN sessions s
+             ON s.workspace_id = l.workspace_id AND s.id = l.session_id
+           WHERE l.workspace_id = t.workspace_id
+             AND l.task_id = t.id
+             AND l.status = 'active'
+             AND l.expires_at_ms > ?
+             AND s.status = 'active'
+             AND s.last_seen_at_ms > ?
+           ORDER BY l.fencing_token DESC
+           LIMIT 1
+         ) ELSE NULL END AS lease_json,
+         (
+           SELECT c.record_json
+           FROM checkpoints c
+           WHERE c.workspace_id = t.workspace_id AND c.task_id = t.id
+           ORDER BY c.created_at_ms DESC, c.id DESC
+           LIMIT 1
+         ) AS checkpoint_json
+       FROM tasks t
+       WHERE t.workspace_id = ? AND t.id = ?`,
+      timestampMs(now, 'Task execution view now'),
+      timestampMs(sessionCutoff, 'Task execution view session cutoff'),
       workspaceId,
       taskId,
     );
+    if (!row) return undefined;
     return {
-      task: clone(task),
-      ...(lease === undefined ? {} : { lease: clone(lease) }),
-      ...(latestCheckpoint === undefined ? {} : { latestCheckpoint: clone(latestCheckpoint) }),
+      task: parseJson<Task>(row.task_json, 'Task execution view Task'),
+      ...(row.lease_json === null
+        ? {}
+        : { lease: parseJson<Lease>(row.lease_json, 'Task execution view Lease') }),
+      ...(row.checkpoint_json === null
+        ? {}
+        : {
+            latestCheckpoint: parseJson<Checkpoint>(
+              row.checkpoint_json,
+              'Task execution view Checkpoint',
+            ),
+          }),
     };
   }
 
