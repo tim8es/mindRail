@@ -3,4 +3,5 @@ base_branch: default
 lease_ttl_minutes: 50
 renewal_threshold_minutes: 15
 finalization_margin_minutes: 10
-branch_prefix: agent/issue-
+claim_branch_prefix: gac-claim/issue-
+work_branch_prefix: agent/issue-
