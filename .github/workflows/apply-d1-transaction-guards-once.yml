@@ -1,5 +1,6 @@
 name: Apply D1 transaction guards once
 
+# Rerun after making the migration repeatable.
 on:
   push:
     branches:
