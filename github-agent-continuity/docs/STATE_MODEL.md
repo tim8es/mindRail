@@ -8,8 +8,9 @@ This document defines where state lives and how a zero-context session resolves 
 2. Long-lived project memory and operational task state are separate.
 3. One source should own each fact whenever possible.
 4. Human/repository stop state overrides execution lease.
-5. Highest generation determines current ownership lineage.
-6. Checkpoint prose summarizes reality; it does not redefine repository reality.
+5. Highest valid **claim generation** determines current ownership lineage.
+6. Claim refs and work refs have different responsibilities.
+7. Checkpoint prose summarizes reality; it does not redefine repository reality.
 
 ## 2. Authority map
 
@@ -19,68 +20,72 @@ This document defines where state lives and how a zero-context session resolves 
 | GAC timing/naming defaults | `.agent/config.yml` |
 | Project mission/boundaries | `.agent/PROJECT.md` |
 | Strategic direction | `.agent/GOALS.md` |
-| Durable cross-session decisions | `.agent/DECISIONS.md` or stronger repository authority linked from it |
+| Durable cross-session decisions | `.agent/DECISIONS.md` or stronger linked authority |
 | Task title/outcome/acceptance criteria | GitHub Issue title/body |
 | Blocking graph | GitHub native Issue dependencies |
 | Human/task terminal stop state | Issue open/closed + `agent:*` labels |
-| Current ownership generation | highest valid matching generation ref |
-| Generation owner/source | generation claim commit |
+| Current ownership generation | highest valid `gac-claim/issue-N-gK` ref |
+| Generation owner/source/work-name | immutable claim commit referenced by that claim ref |
 | Initial lease time | GitHub claim-commit committer timestamp |
-| Renewal/yield event time | GitHub Issue-comment `created_at` for a valid unedited GAC event |
-| Current implementation | current generation branch HEAD/tree |
+| Renewal/yield event time | GitHub Issue-comment `created_at` for valid unedited event |
+| Current implementation | matching `agent/issue-N-gK` work branch HEAD/tree |
 | Verification evidence | actual project/CI results, not checkpoint claims alone |
 | Integration completion | authoritative base branch / merged PR |
-| Recovery summary | latest relevant structured checkpoint, reconciled against all above |
+| Recovery summary | latest relevant structured checkpoint reconciled against stronger evidence |
 
-## 3. Control state vs work state
+## 3. Control state vs operational state
 
-### Durable control memory
+`.agent/**` should change rarely. Do not store current Issue, owner, lease, generation, checkpoint, temporary blocker, or current HEAD there.
 
-`.agent/**` should change rarely. It contains project-wide context that remains useful across many tasks.
-
-Do not store operational fields such as:
-
-- current Issue number;
-- session owner;
-- active lease;
-- current generation;
-- last checkpoint;
-- temporary blocker;
-- current branch HEAD.
-
-Those facts already live in GitHub and duplicating them in a shared file creates conflict/staleness.
-
-### Operational work state
-
-Operational state is distributed across native GitHub objects:
+Operational state is distributed across GitHub objects:
 
 ```text
-Issue          -> desired task/lifecycle
-Dependencies   -> ordering
-Generation ref -> current ownership lineage
-Claim commit   -> owner + source + initial lease event
-Generation git -> durable implementation
-Issue comments -> renewal/yield + recovery summary
-PR/base        -> integration result
+Issue            -> desired task/lifecycle
+Dependencies     -> ordering
+Immutable claim  -> generation + owner + source + initial lease
+Generation work  -> durable implementation
+Issue comments   -> renewal/yield + recovery projection
+PR/base          -> integration result
 ```
 
-## 4. Generation validity
+This avoids a hot shared `STATE.md` that parallel sessions would race to edit.
 
-A branch matching the configured GAC naming pattern is a valid generation only when its claim commit validates all of:
+## 4. Claim-ref validity
 
-- `GAC-Claim: v1` exists;
-- `GAC-Issue` equals branch Issue number;
-- `GAC-Generation` equals branch generation;
-- owner is non-empty;
-- base branch is non-empty;
+A ref matching configured claim naming is a valid claim generation only when its referenced commit validates all of:
+
+- `GAC-Claim: v1`;
+- `GAC-Issue` equals ref Issue number;
+- `GAC-Generation` equals ref generation;
+- `GAC-Work-Branch` equals configured work branch for same Issue/generation;
+- owner/base/source are non-empty;
 - source SHA equals claim parent;
 - claim tree equals source tree (empty metadata commit).
 
-A malformed highest matching generation is a corruption/collision condition. Fail closed; do not skip it and silently use an older generation.
+A valid claim ref is immutable by protocol after creation.
 
-## 5. Lease state machine per generation
+A malformed highest matching claim is corruption/namespace collision. Fail closed; do not silently use an older generation.
 
-A generation starts in `ACTIVE` at claim commit server time.
+## 5. Work-ref validity
+
+A work branch is operational implementation state, not ownership authority.
+
+For generation K it must:
+
+- have exact configured work name for Issue/generation;
+- correspond to an existing valid matching claim generation;
+- equal or descend from that claim's `GAC-Source-Head`;
+- preserve that source ancestry under normal operation (no rebase/force rewrite).
+
+The work branch starts at source itself, not at claim commit. Therefore claim metadata does not need to enter PR/base history.
+
+If claim exists but work ref does not, ownership can still be active; the winner may create work ref. If it crashes, a successor can recover after lease expiry using the prior claim source.
+
+A work branch without a valid matching claim grants no GAC authority.
+
+## 6. Lease state machine per claim generation
+
+A claim generation starts `ACTIVE` at claim commit server time.
 
 ```text
 ACTIVE
@@ -89,100 +94,102 @@ ACTIVE
   | yielded checkpoint           -> YIELDED
   | blocked checkpoint           -> BLOCKED
   | human-required checkpoint    -> HUMAN_REQUIRED
-  | higher generation appears    -> STALE
+  | higher claim appears         -> STALE
 
 EXPIRED/YIELDED/BLOCKED/HUMAN_REQUIRED
-  | higher generation appears    -> STALE
+  | higher claim appears         -> STALE
 
 STALE -> terminal forever
 ```
 
-A generation that expired or published a terminating disposition cannot reactivate itself with a later comment. Continuation is a new generation.
+A generation that expired or published a terminating disposition cannot reactivate itself. Continuation requires a new claim/work generation.
 
-## 6. Issue projection repair
+## 7. Issue projection repair
 
-Labels are useful UI but are not the mutex. When label state disagrees with stronger evidence, an authorized agent may repair the projection.
+Labels are UI projections, not mutexes.
 
 Examples:
 
-- `agent:ready` + valid active highest lease -> repair to `agent:active`.
-- `agent:active` + expired highest lease -> task is recoverable; label may stay active until takeover or be repaired according to repository convention.
-- closed Issue + active lease -> closed Issue is a stop condition; the generation cannot keep executing.
-- `agent:human-required` + active lease -> human-required stops execution; lease does not override it.
+- `agent:ready` + valid active highest claim -> repair toward `agent:active` if permitted.
+- `agent:active` + expired highest claim -> task is recoverable; projection may be repaired.
+- closed Issue + active lease -> Issue stop state wins; execution stops.
+- `agent:human-required` + active lease -> human-required wins; execution stops.
 
-Do not repair a human terminal state merely to make it agree with a stale checkpoint.
+Do not rewrite human terminal state merely to agree with stale checkpoints.
 
-## 7. Checkpoint reconciliation
+## 8. Checkpoint reconciliation
 
 A checkpoint may claim `HEAD: abc`, `Verified: tests pass`, and `Next action: ...`.
 
-A successor must verify:
+A successor verifies:
 
-1. referenced branch/generation still exists and is current/relevant;
-2. referenced HEAD exists on the expected generation lineage;
-3. any claimed durable change is actually pushed;
-4. test/CI status is current enough for the next action;
-5. Issue requirements/dependencies have not changed materially.
+1. referenced claim is current/relevant;
+2. referenced work branch belongs to that claim;
+3. referenced HEAD exists on expected work lineage;
+4. claimed durable changes are actually pushed;
+5. verification/CI evidence is current enough;
+6. requirements/dependencies did not materially change.
 
-If checkpoint prose conflicts with repository evidence, repository evidence wins and the successor writes a corrected checkpoint once it has authority.
+Repository evidence wins over prose. A corrected checkpoint is written only after successor has authority.
 
-## 8. Comment trust model
+## 9. Comment trust model
 
-Issue comments are editable/deletable and therefore are not immutable audit records.
+Issue comments are editable/deletable and are not immutable audit storage.
 
 For lease semantics:
 
-- only structurally valid current-generation comments are considered;
-- `created_at` is the event time;
-- body-provided timestamps are ignored;
-- edited comments (`updated_at != created_at`) are excluded from lease authority;
-- deletion can remove renewal evidence, which is one reason GAC is cooperative rather than tamper-proof.
+- only structurally valid current-claim comments count;
+- GitHub `created_at` is event time;
+- body timestamps are ignored;
+- edited comments (`updated_at != created_at`) are excluded from authority;
+- deletion can remove renewal evidence, so the model remains cooperative rather than tamper-proof.
 
-For recovery prose, edited comments may still be useful as non-authoritative hints.
+Edited comments may still be non-authoritative recovery hints.
 
-## 9. Dependency semantics
+## 10. Dependency semantics
 
 Native GitHub dependencies own graph edges. GAC adds success semantics:
 
 - blocker closed + `agent:done` -> satisfied;
-- blocker `agent:cancelled` -> not successful; dependent must not auto-run;
+- blocker `agent:cancelled` -> not successful;
 - blocker open/blocked/human-required/active/ready -> unsatisfied;
-- blocker closed with ambiguous GAC outcome -> human resolution required for dependent execution.
+- blocker closed with ambiguous GAC outcome -> human resolution required.
 
-This prevents a manually cancelled/abandoned prerequisite from being mistaken for delivered functionality.
+Cancellation/closure cannot silently masquerade as delivered functionality.
 
-## 10. Base branch and done
+## 11. Base branch and done
 
-For coding work, the base branch is the final integration truth.
+For coding work, authoritative base is final integration truth.
 
 `agent:done` requires:
 
-- intended result present in authoritative base branch;
-- required repository validation/review policy satisfied;
-- Issue closed as completed;
+- intended result present in base;
+- required validation/review policy satisfied;
+- Issue closed successfully;
 - not cancelled.
 
-A generation branch or open PR alone is insufficient.
+A work branch or open PR is insufficient. Claim refs are control metadata and never count as implementation completion.
 
-For non-code tasks where no merge is meaningful, the Issue must explicitly define the durable completion artifact/outcome before `agent:done` can be used.
+For non-code tasks, the Issue must define a durable completion artifact/outcome explicitly.
 
-## 11. Concurrent control-file edits
+## 12. Concurrent control-file edits
 
-`.agent/**`, `.agents/**`, `.github/**` GAC templates, and `docs/*` GAC protocol files are shared control scope. Parallel ordinary task agents should not modify them unless specifically authorized.
+`.agent/**`, `.agents/**`, GAC `.github/**` templates, and GAC protocol docs are shared control scope. Ordinary parallel product tasks should not modify them unless specifically authorized.
 
-If two control-plane tasks must run concurrently, their Issues should declare overlap explicitly and integration should be serialized through review rather than assuming conflict-free merge.
+Concurrent control-plane changes should declare overlap and be serialized through review/integration rather than assuming conflict-free merge.
 
-## 12. Recovery precedence checklist
+## 13. Recovery precedence checklist
 
-When state appears inconsistent, answer in this order:
+When state appears inconsistent:
 
 1. What repository policy/security instructions apply?
-2. Is the Issue open and executable, or is there a human/terminal stop?
-3. What is the highest valid generation ref?
-4. Who owns its claim commit and from which source HEAD?
-5. Is that generation active, expired, yielded, or terminated using server-timed events?
-6. What is actually pushed on the generation branch?
-7. What do PR/base/CI results say?
-8. What do checkpoint summaries add that repository evidence does not already prove?
+2. Is Issue open/executable, or is there human/terminal stop?
+3. What is highest valid **claim** generation?
+4. Who owns its immutable claim, from what source, and what work branch is declared?
+5. Is claim active/expired/yielded/terminated by server-timed events?
+6. Does matching work branch exist and validate against source?
+7. What is actually pushed on work branch?
+8. What do PR/base/CI results prove?
+9. What useful context remains only in checkpoint prose?
 
-Never reverse this order merely because a checkpoint is easier to read.
+Never reverse this order because checkpoint text is easier to read.
