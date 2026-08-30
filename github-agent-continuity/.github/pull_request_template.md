@@ -1,8 +1,9 @@
 ## GAC task
 
 - Issue: #
-- Generation branch: `agent/issue-N-gK`
-- Current generation confirmed before opening: yes / no
+- Claim ref: `gac-claim/issue-N-gK`
+- Work branch: `agent/issue-N-gK`
+- Current claim generation confirmed before opening: yes / no
 
 ## Outcome
 
@@ -12,7 +13,8 @@ Describe the integrated result this PR is intended to deliver.
 
 - [ ] Every Issue acceptance criterion was re-read before finalization.
 - [ ] Native Issue dependencies were re-checked.
-- [ ] The submitting generation was still highest after the final push.
+- [ ] The submitting claim generation was still highest after the final push.
+- [ ] PR head is the generation work branch, not the immutable claim ref.
 
 ## Verification actually executed
 
@@ -28,6 +30,10 @@ command/check -> observed result
 - Shared paths changed:
 - Known overlap with another active GAC task:
 - Supersedes an older generation PR: none / #
+
+## Control-metadata check
+
+- [ ] GAC claim commit is not part of the work-branch ancestry being integrated solely because of GAC ownership metadata.
 
 ## Human decisions
 
