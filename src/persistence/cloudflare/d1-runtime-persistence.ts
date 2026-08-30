@@ -29,6 +29,7 @@ import {
   type PersistenceDomainTarget,
   type PersistenceDomainValidator,
   type StoredCommandReceipt,
+  type TaskExecutionView,
   type TaskOutcomeCommitInput,
   type TaskOutcomeCommitValue,
   type WorkspaceMutationCoordinator,
@@ -73,6 +74,12 @@ interface PermissionHeadRow {
 interface PendingPermissionRow {
   request_json: string;
   decision_json: string;
+}
+
+interface TaskExecutionViewRow {
+  task_json: string;
+  lease_json: string | null;
+  checkpoint_json: string | null;
 }
 
 export class D1RuntimePersistence implements DurableRuntimePersistence {
@@ -1788,6 +1795,70 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     );
   }
 
+  async listGoals(workspaceId: string, limit: number, offset = 0): Promise<Goal[]> {
+    return this.readRecords<Goal>(
+      `SELECT record_json FROM goals
+       WHERE workspace_id = ? ORDER BY created_at_ms, id LIMIT ? OFFSET ?`,
+      workspaceId,
+      boundedLimit(limit),
+      boundedOffset(offset),
+    );
+  }
+
+  async getTaskExecutionView(
+    workspaceId: string,
+    taskId: string,
+    now: string,
+    sessionCutoff: string,
+  ): Promise<TaskExecutionView | undefined> {
+    const row = await this.first<TaskExecutionViewRow>(
+      `SELECT
+         t.record_json AS task_json,
+         CASE WHEN t.status = 'running' THEN (
+           SELECT l.record_json
+           FROM leases l
+           JOIN sessions s
+             ON s.workspace_id = l.workspace_id AND s.id = l.session_id
+           WHERE l.workspace_id = t.workspace_id
+             AND l.task_id = t.id
+             AND l.status = 'active'
+             AND l.expires_at_ms > ?
+             AND s.status = 'active'
+             AND s.last_seen_at_ms > ?
+           ORDER BY l.fencing_token DESC
+           LIMIT 1
+         ) ELSE NULL END AS lease_json,
+         (
+           SELECT c.record_json
+           FROM checkpoints c
+           WHERE c.workspace_id = t.workspace_id AND c.task_id = t.id
+           ORDER BY c.created_at_ms DESC, c.id DESC
+           LIMIT 1
+         ) AS checkpoint_json
+       FROM tasks t
+       WHERE t.workspace_id = ? AND t.id = ?`,
+      timestampMs(now, 'Task execution view now'),
+      timestampMs(sessionCutoff, 'Task execution view session cutoff'),
+      workspaceId,
+      taskId,
+    );
+    if (!row) return undefined;
+    return {
+      task: parseJson<Task>(row.task_json, 'Task execution view Task'),
+      ...(row.lease_json === null
+        ? {}
+        : { lease: parseJson<Lease>(row.lease_json, 'Task execution view Lease') }),
+      ...(row.checkpoint_json === null
+        ? {}
+        : {
+            latestCheckpoint: parseJson<Checkpoint>(
+              row.checkpoint_json,
+              'Task execution view Checkpoint',
+            ),
+          }),
+    };
+  }
+
   async loadWorkspaceState(workspaceId: string): Promise<WorkspaceStateSnapshot | undefined> {
     const workspaceRecord = await this.getWorkspace(workspaceId);
     if (!workspaceRecord) return undefined;
@@ -2598,12 +2669,28 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     return row ? Number(row.last_fencing_token) : undefined;
   }
 
-  private async listGoalTasks(workspaceId: string, goalId: string): Promise<Task[]> {
+  async listGoalTasks(
+    workspaceId: string,
+    goalId: string,
+    limit?: number,
+    offset = 0,
+  ): Promise<Task[]> {
+    if (limit === undefined) {
+      return this.readRecords<Task>(
+        `SELECT record_json FROM tasks
+         WHERE workspace_id = ? AND goal_id = ? ORDER BY created_at_ms, id`,
+        workspaceId,
+        goalId,
+      );
+    }
     return this.readRecords<Task>(
       `SELECT record_json FROM tasks
-       WHERE workspace_id = ? AND goal_id = ? ORDER BY created_at_ms, id`,
+       WHERE workspace_id = ? AND goal_id = ?
+       ORDER BY created_at_ms, id LIMIT ? OFFSET ?`,
       workspaceId,
       goalId,
+      boundedLimit(limit),
+      boundedOffset(offset),
     );
   }
 
