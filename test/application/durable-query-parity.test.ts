@@ -268,6 +268,7 @@ describe('durable query parity', () => {
         workspaceId: 'ws-a',
         actor: { type: 'agent', id: seeded.agent.id },
         sessionId: seeded.session.id,
+        taskId: seeded.firstTask.id,
         leaseId: seeded.lease.id,
         expectedLeaseRevision: seeded.lease.revision,
         fencingToken: seeded.lease.fencingToken,
