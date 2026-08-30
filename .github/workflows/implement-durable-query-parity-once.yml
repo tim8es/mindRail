@@ -1,4 +1,5 @@
 name: Implement durable query parity once
+# rerun after removing obsolete unsupportedQuery helper
 
 on:
   push:
