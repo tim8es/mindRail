@@ -1,17 +1,18 @@
 # GAC Protocol v0.1
 
-This document defines the operational procedure agents follow. `DESIGN.md` defines the architecture and guarantee boundary; `STATE_MODEL.md` defines authority when evidence conflicts.
+This document defines the operational procedure agents follow. `DESIGN.md` defines the architecture/guarantee boundary; `STATE_MODEL.md` defines authority when evidence conflicts.
 
 ## 1. Terms
 
-- **base branch** — configured authoritative integration branch; `default` resolves to the repository default branch.
+- **base branch** — configured authoritative integration branch; `default` resolves repository default.
 - **Issue N** — one executable task.
-- **generation K** — ownership/work branch `agent/issue-N-gK`.
-- **claim commit** — first commit unique to a generation; records owner metadata and initial server-timed lease event.
-- **owner** — globally unique session identifier stored in the claim commit.
-- **lease** — bounded execution authority for the highest generation.
-- **checkpoint** — structured Issue comment containing recovery state; valid active/finalizing checkpoints also renew the lease.
-- **yield** — structured terminal checkpoint for a generation that intentionally ends its lease early.
+- **claim generation K** — immutable ownership ref `gac-claim/issue-N-gK`.
+- **work generation K** — implementation branch `agent/issue-N-gK` associated with that claim.
+- **claim commit** — empty commit referenced by the claim ref; stores owner/source metadata and initial server-timed lease event.
+- **owner** — globally unique session identifier stored in claim commit.
+- **lease** — bounded execution authority for highest valid claim generation.
+- **checkpoint** — structured Issue comment containing recovery state; valid active/finalizing checkpoints renew lease.
+- **yield** — structured terminal checkpoint that intentionally ends one generation early.
 
 ## 2. Session identity
 
@@ -21,17 +22,17 @@ Generate a unique opaque owner ID per independent execution session, for example
 session-20260830T120000Z-7f31c7d4
 ```
 
-Do not reuse an owner ID across independent scheduled sessions.
+Never reuse an owner ID across independent scheduled sessions.
 
 ## 3. Bootstrap before editing
 
 1. Read repository-specific agent/security instructions.
-2. Read `.agent/config.yml`, `.agent/PROJECT.md`, `.agent/GOALS.md`, and only relevant entries from `.agent/DECISIONS.md`.
-3. Inspect open Issues carrying `agent:active`, `agent:blocked`, `agent:human-required`, or `agent:ready`.
-4. Read native Issue dependencies for candidates.
-5. Inspect matching generation refs for resumable/candidate tasks.
+2. Read `.agent/config.yml`, `.agent/PROJECT.md`, `.agent/GOALS.md`, and only relevant `.agent/DECISIONS.md` entries.
+3. Inspect open `agent:active`, `agent:blocked`, `agent:human-required`, and `agent:ready` Issues.
+4. Read native Issue dependencies.
+5. Inspect matching claim refs and corresponding work refs.
 6. Inspect related PRs, CI/status, recent commits, and relevant checkpoints.
-7. Reconcile labels/comments against actual repository state before selecting work.
+7. Reconcile labels/comments against repository state.
 
 No implementation write occurs before this pass.
 
@@ -39,33 +40,31 @@ No implementation write occurs before this pass.
 
 An Issue is executable only when all are true:
 
-- it is open;
-- it is not `agent:cancelled`, `agent:blocked`, or `agent:human-required`;
-- all native blocking dependencies are semantically satisfied;
-- repository policy allows the intended work;
-- it either has no generation, or its highest generation is expired/yielded and therefore recoverable, or it is `agent:ready` for initial claim.
+- open;
+- not `agent:cancelled`, `agent:blocked`, or `agent:human-required`;
+- native blocking dependencies semantically satisfied;
+- repository policy allows intended work;
+- either no claim generation exists, or highest generation is expired/yielded/terminated and therefore recoverable.
 
-For GAC-managed dependencies, a successful dependency normally means closed + `agent:done` and not `agent:cancelled`.
+For GAC-managed dependencies, success normally means blocker closed + `agent:done` and not cancelled. Ambiguous closed blockers do not count as success automatically.
 
-A closed dependency with ambiguous outcome must not be treated as successful automatically.
+## 5. Discover highest claim generation
 
-## 5. Discover the highest generation
-
-For Issue `N`, query GitHub matching refs for the exact prefix represented by configured `branch_prefix` plus the Issue number. With the default naming, parse only branches matching:
+Using configured `claim_branch_prefix`, query GitHub matching refs and parse only exact names such as:
 
 ```text
-^agent/issue-N-g([1-9][0-9]*)$
+^gac-claim/issue-N-g([1-9][0-9]*)$
 ```
 
-Use the highest integer generation.
+Use highest integer generation.
 
-Do not infer the highest generation from Issue comments or labels. Do not rely on the first page of a repository-wide branch listing.
+Do not infer current generation from work branches, labels, comments, or a first page of repository-wide branches.
 
-Every matching generation must begin with a structurally valid GAC claim commit. If the highest matching branch has no valid claim metadata, fail closed and request human repair rather than guessing around a namespace collision/corruption.
+Every matching claim ref must point to a structurally valid GAC claim commit. If the highest matching claim is malformed, fail closed and request repair rather than skipping it.
 
-## 6. Read claim metadata
+## 6. Validate claim metadata
 
-The generation's claim commit contains:
+Claim commit trailers:
 
 ```text
 GAC-Claim: v1
@@ -74,114 +73,146 @@ GAC-Generation: K
 GAC-Owner: <owner-id>
 GAC-Base-Branch: <resolved-base>
 GAC-Source-Head: <source-sha>
+GAC-Work-Branch: agent/issue-N-gK
 ```
 
-The claim commit is the first commit after `GAC-Source-Head` on that generation and uses the same tree as the source commit.
+Validate:
 
-The GitHub committer timestamp on this claim commit is the initial lease-event time.
+- Issue/generation match claim-ref name;
+- `GAC-Work-Branch` matches configured work branch for same Issue/generation;
+- claim parent equals `GAC-Source-Head`;
+- claim tree equals source tree (empty metadata commit);
+- owner/base/source are non-empty and resolvable as required.
 
-Reject a claim as invalid when Issue number, generation number, branch name, source parent, or required trailers disagree.
+The GitHub committer timestamp on this immutable claim commit is initial lease-event time.
+
+Claim refs never receive later work commits and must never be advanced/rebased/force-updated by GAC.
 
 ## 7. Determine lease state
 
-Read all relevant Issue comments across pagination and identify structurally valid `GAC CHECKPOINT v1` comments for the current highest generation and claim owner.
+Read all relevant Issue comments across pagination and identify structurally valid `GAC CHECKPOINT v1` comments for current highest claim/owner.
 
-For authority purposes a checkpoint event is valid only when:
+For lease authority, a checkpoint event is valid only when:
 
-- `Task`, `Generation`, and `Owner` match the current claim;
-- `Work branch` matches the current generation branch;
-- GitHub reports `created_at == updated_at` (the comment was not edited);
-- its disposition is one of the defined values.
+- `Task`, `Generation`, `Owner`, and `Claim ref` match current claim;
+- `Work branch` matches claim metadata;
+- GitHub reports `created_at == updated_at`;
+- disposition is defined.
 
-Progress text from edited comments may still be a hint, but an edited comment never renews/terminates a lease.
+Edited comments can be prose hints but never renew/terminate a lease.
 
 ### Effective event
 
-Start with the claim commit server timestamp. Then consider valid checkpoint events in GitHub `created_at` order.
+Start with claim-commit server timestamp, then process valid checkpoint events by GitHub `created_at`:
 
-- `active` or `finalizing` — renews lease from that comment's `created_at`.
-- `yielded`, `blocked`, or `human-required` — permanently terminates that generation's execution authority at that event.
+- `active` or `finalizing` — renews from `created_at`;
+- `yielded`, `blocked`, `human-required` — permanently terminates that generation at the event.
 
-Once a generation has a valid terminating disposition, a later comment must not revive it. Continuation requires a new generation.
+A terminating disposition is monotonic. Later comments cannot revive the generation.
 
-Without a terminating event:
+Without termination:
 
 ```text
 lease_expires_at = latest_effective_event_created_at + lease_ttl_minutes
 ```
 
-Compare against current trustworthy GitHub/server time when available. Do not use timestamps written inside comment bodies as authority.
+Use trustworthy GitHub/server time for comparison when available. Ignore body/local timestamps as authority.
 
-An expired generation cannot renew itself. It must be superseded by a new generation.
+An expired generation cannot renew itself; continuation requires a new claim generation.
 
-## 8. Claim initial work or recover expired work
+## 8. Choose next claim generation and source
 
-### 8.1 Choose generation and source
+- no claim generation -> `K = 1`, source = current base HEAD;
+- expired/yielded/terminated highest `gK` -> next = `g(K+1)`.
 
-- no existing generation → `K = 1`, source = current base-branch HEAD;
-- expired/yielded highest `gK` → next generation = `K + 1`, source = current HEAD of `gK` read immediately before claim construction.
+For takeover source:
 
-If the current highest generation still has a valid active lease, do not claim the Issue.
+1. if matching previous work branch exists and is valid, use its current HEAD;
+2. if previous owner never created a valid work branch, use previous claim's `GAC-Source-Head`.
 
-### 8.2 Construct an empty claim commit
+A work branch is valid only when it belongs to same Issue/generation namespace and its history descends from the source recorded by matching claim. Generation work branches must not be rebased/force-rewritten under normal GAC operation.
+
+If highest claim still has active lease, do not claim.
+
+## 9. Construct candidate claim commit
 
 Using GitHub Git Database operations:
 
-1. read the source commit and tree SHA;
-2. create a commit with the same tree;
+1. read source commit/tree;
+2. create commit with same tree;
 3. parent = exact source SHA;
-4. include required GAC claim trailers;
+4. include required claim trailers including expected work branch;
 5. omit custom author/committer timestamps so GitHub supplies current authenticated identity/date.
 
-Creating this candidate commit does **not** grant ownership.
+Creating candidate commit alone grants no authority.
 
-### 8.3 Atomically create the exact ref
+## 10. Atomically create exact claim ref
 
 Create:
 
 ```text
-refs/heads/agent/issue-N-gK -> <candidate-claim-sha>
+refs/heads/gac-claim/issue-N-gK -> <candidate-claim-sha>
 ```
 
-where `K` is exactly the candidate generation.
+where K is exactly the candidate generation.
 
-- success: read the ref and claim commit back; ownership is established only after read-back validation.
-- conflict/already exists: re-read the exact ref and its claim commit.
+- success: read ref/claim back and validate before acting;
+- conflict/already exists: re-read exact ref/claim.
 
-If a create-ref response was lost, the read-back resolves ambiguity:
+### Lost response
 
-- ref claim owner equals this session owner and metadata matches → treat the claim as this session's successful claim if its lease is still valid;
-- ref claim owner differs → another session won;
-- malformed metadata → fail closed.
+If create-ref response was lost:
 
-Do not create `g(K+2)` merely because `g(K+1)` creation conflicted. Reconcile first.
+- referenced valid claim owner == this session owner and metadata matches -> recover this session's successful claim if lease still valid;
+- owner differs -> another session won;
+- malformed -> fail closed.
 
-Candidate commits that never become referenced are non-authoritative and may be garbage-collected by GitHub.
+Do not create the next generation merely because exact ref creation conflicted. Reconcile first.
 
-## 9. Project lifecycle projection after claim
+Unreferenced candidate commits are non-authoritative.
 
-After winning a claim, reconcile Issue labels to `agent:active` when the repository permits label writes. Labels are projections, never the mutex.
+## 11. Create/read work branch after claim win
 
-If label mutation fails but claim authority is otherwise valid, checkpoint the metadata failure; whether work may continue depends on repository policy. Do not pretend label state is correct.
+Only winning claim owner may establish matching work branch:
 
-## 10. Work loop
+```text
+refs/heads/agent/issue-N-gK -> <GAC-Source-Head>
+```
 
-While the generation and lease remain valid:
+The work branch starts at source, **not** at claim commit. Product commits therefore never need to include claim metadata in integration history.
 
-1. select the next acceptance criterion;
-2. inspect existing implementation before editing;
+After attempting work-ref creation, read it back:
+
+- absent and creation failed unexpectedly -> do not start implementation;
+- existing at source/valid descendants and current claim is yours -> treat as current work branch (supports lost-response retry);
+- existing but incompatible with claim source/history -> corruption, fail closed.
+
+A crash after winning claim but before work-ref creation is recoverable: claim still defines owner/source/lease. After expiry, successor can create next claim using prior source because no valid work was produced.
+
+## 12. Lifecycle projection after claim
+
+After claim + work-ref validation, reconcile Issue labels to `agent:active` when permitted. Labels are projections, never mutex.
+
+If metadata repair fails, report it; do not pretend label state is correct. Whether implementation may continue depends on repository policy.
+
+## 13. Work loop
+
+While highest claim + lease remain valid:
+
+1. select next acceptance criterion;
+2. inspect implementation;
 3. make one coherent change;
-4. run relevant validation available in the project;
-5. commit and push the change to the current generation branch;
-6. re-read highest generation and Issue stop state before consequential writes;
-7. publish a concise checkpoint after meaningful recoverable progress;
+4. run relevant validation;
+5. commit/push to current generation **work branch**;
+6. re-read highest claim generation and Issue stop state before consequential writes;
+7. checkpoint meaningful durable progress;
 8. renew before `renewal_threshold_minutes` remains.
 
-Never checkpoint unpushed implementation as durable.
+Never push implementation to claim ref. Never checkpoint unpushed implementation as durable.
 
-If a higher generation appears at any re-check, stop writing immediately. Local/unpushed work may be summarized for humans but is not current authority.
+If higher claim generation appears, stop immediately. Local/unpushed work is not current authority.
 
-## 11. Checkpoint format
+## 14. Checkpoint format
 
 ```text
 GAC CHECKPOINT v1
@@ -190,8 +221,9 @@ Task: #42
 Owner: session-...
 Generation: 3
 Disposition: active
+Claim ref: gac-claim/issue-42-g3
 Work branch: agent/issue-42-g3
-HEAD: <pushed-sha>
+HEAD: <pushed-work-sha>
 Completed:
 - ...
 Verified:
@@ -203,99 +235,92 @@ Blockers: none
 Human decision required: none
 ```
 
-Allowed dispositions:
-
-- `active`
-- `finalizing`
-- `yielded`
-- `blocked`
-- `human-required`
+Allowed dispositions: `active`, `finalizing`, `yielded`, `blocked`, `human-required`.
 
 Do not include chain-of-thought, raw command transcripts, or verbose diary text.
 
-## 12. Graceful yield
+## 15. Graceful yield
 
-Before a scheduled/host session ends naturally:
+Before a scheduled/host session ends normally:
 
 1. push coherent recoverable work;
-2. post a checkpoint with `Disposition: yielded` and a concrete next action;
-3. stop modifying the generation branch after the comment is created.
+2. post `Disposition: yielded` with concrete next action;
+3. stop modifying work branch after comment creation.
 
-The next session may create the next generation immediately without waiting for TTL expiry.
+Next session may create next claim generation immediately. TTL expiry is crash path, not preferred routine handoff.
 
-If the session dies before yield, the next session waits until expiry and performs takeover.
+## 16. Blocked and human-required
 
-## 13. Blocked and human-required
+When objectively blocked:
 
-When an objective blocker appears:
-
-1. push only coherent work safe to preserve;
-2. post `Disposition: blocked` with exact unblock condition;
-3. apply `agent:blocked` and remove active/ready projection when permitted;
+1. push coherent safe work;
+2. post `Disposition: blocked` + exact unblock condition;
+3. apply `agent:blocked` when permitted;
 4. stop writing.
 
-When a human decision/permission is required:
+When human decision/permission required:
 
-1. post `Disposition: human-required` with exactly one actionable question/request;
+1. post `Disposition: human-required` with exactly one actionable request;
 2. apply `agent:human-required` when permitted;
-3. stop writing and do not guess through the gate.
+3. stop writing and do not guess.
 
-Resuming either state after it becomes executable uses a **new generation**. A terminated generation is never revived.
+Resume after either state via **new claim/work generation**. Terminated generation is never revived.
 
-## 14. Recovery
+## 17. Recovery
 
-A takeover winner starts from the previous generation HEAD captured at claim time. Then:
+Takeover winner uses source chosen before claim creation, then creates new work branch at that source.
 
-1. inspect old checkpoints, commits, PRs, CI/status, Issue requirements, and dependencies;
-2. distinguish pushed durable work from prose claims;
-3. re-run/re-check validation as needed;
-4. continue from existing work rather than rebuilding it blindly.
+Recovery then:
 
-Writes that an expired/stale session later pushes to an older branch remain isolated. A current owner may salvage a specific stale commit only after reviewing it; never merge stale branches automatically merely because they are newer in wall-clock time.
+1. inspects old checkpoints, previous work commits/diff, PRs, CI, requirements, dependencies;
+2. distinguishes pushed durable work from prose claims;
+3. re-runs/re-checks validation as needed;
+4. continues existing work rather than restarting blindly.
 
-## 15. Requirement changes
+Late stale pushes remain isolated on old work branches. Salvage specific stale commits only after explicit review; never auto-merge a stale branch because of newer wall-clock time.
 
-Before finalization, always re-fetch Issue title/body and dependencies. Do not rely solely on what was read at claim time.
+## 18. Requirement changes
 
-If acceptance criteria or dependency semantics materially changed, reconcile the implementation before proceeding. If the change creates ambiguity, use human-required.
+Before finalization, re-fetch Issue title/body and native dependencies. If requirements materially changed, reconcile implementation first. If ambiguous, use human-required.
 
-## 16. Finalization
+## 19. Finalization
 
-Before finalization:
-
-1. confirm Issue remains executable;
-2. confirm your generation is still highest;
-3. compute remaining lease time from valid server-timed events;
-4. if remaining time is below `finalization_margin_minutes`, renew first;
+1. confirm Issue executable;
+2. confirm your **claim generation** still highest;
+3. compute remaining server-timed lease;
+4. renew first if below `finalization_margin_minutes`;
 5. re-read requirements/dependencies;
 6. evaluate every acceptance criterion;
-7. run relevant validation and inspect final diff;
-8. push all intended work;
-9. re-read highest generation and Issue stop state after the push.
+7. run relevant validation/inspect final diff;
+8. push all intended work to current work branch;
+9. re-read highest claim and Issue stop state after push.
 
-Then create a PR from the **current generation branch** only when implementation is integration-ready.
+Create PR from **current work branch** only when integration-ready.
 
-- autonomous merge allowed + required checks satisfied → merge according to repository policy, verify result exists in base, then set `agent:done` and close Issue.
-- human merge/review required → post `human-required` with the exact PR decision needed; do not mark done.
-- CI/external prerequisite pending → use blocked/waiting policy defined by the repository; do not call done.
+- autonomous merge allowed + checks satisfied -> merge by repository policy, verify result in base, then `agent:done` + successful Issue close;
+- human merge/review required -> post human-required exact request; do not mark done;
+- CI/external prerequisite pending -> use repository waiting/blocked policy; do not mark done.
 
-An open PR is not successful task completion.
+An open PR is not completion.
 
-If review requests new implementation after a PR exists, continue via a new generation and supersede/close the stale PR when appropriate rather than reintroducing a permanent shared work branch.
+Claim commits live on separate claim refs, so normal PR integration of work branch does not import GAC claim commits into base history.
 
-## 17. Cancellation
+If review requires new implementation after PR exists, create next generation from latest intended work and supersede/close stale PR when appropriate rather than using a permanent shared work branch.
 
-`agent:cancelled` is terminal abandonment, not success. Stop all GAC work for the Issue. Dependent tasks must not silently interpret a cancelled blocker as satisfied.
+## 20. Cancellation
 
-## 18. API/consistency failure handling
+`agent:cancelled` is terminal abandonment, not success. Stop GAC work. Dependent tasks must not silently interpret it as satisfied.
+
+## 21. API/consistency failures
 
 Fail closed rather than weakening protocol when:
 
-- exact Git ref creation is unavailable;
-- claim commit metadata cannot be created/read;
-- generation namespace is malformed/colliding;
-- highest generation cannot be determined completely;
-- Issue dependency state cannot be resolved for a dependency-sensitive task;
-- repository policy/security instructions conflict with the intended action.
+- exact claim-ref creation unavailable;
+- claim commit cannot be created/read/validated;
+- claim/work namespace malformed/colliding;
+- highest claim generation cannot be determined completely;
+- expected work branch conflicts with incompatible history;
+- dependency state cannot be resolved for dependency-sensitive task;
+- repository policy/security instructions conflict with action.
 
-Do not substitute labels, comments, or model confidence for missing ownership primitives.
+Do not substitute labels, comments, model confidence, or a shared work branch for missing ownership primitives.
