@@ -9,68 +9,71 @@ description: Use when an autonomous agent works on a GitHub repository across in
 
 Treat every session as disposable. GitHub and committed repository content are durable truth; conversation history is not.
 
-Before editing, a zero-context successor must be able to determine the project goal, executable task, current ownership generation, durable progress, blockers, and next action.
+Before editing, recover project goal, executable task, current claim generation/lease, durable work, blockers, and next action.
 
-Read `docs/PROTOCOL.md` for exact claim/lease mechanics and `docs/STATE_MODEL.md` when sources disagree.
+Read `docs/PROTOCOL.md` for exact mechanics and `docs/STATE_MODEL.md` when evidence conflicts.
 
 ## Start every session
 
-1. Read repository-specific agent/security instructions first.
-2. Read `.agent/config.yml`, `.agent/PROJECT.md`, `.agent/GOALS.md`, and only relevant durable decisions.
-3. Inspect active, blocked, human-required, and ready Issues.
-4. Inspect native Issue dependencies.
-5. Inspect matching `agent/issue-N-gK` refs and relevant PR/CI/commit state.
-6. Reconcile checkpoint prose against actual GitHub state.
+1. Read repository-specific agent/security instructions.
+2. Read `.agent/config.yml`, project/goals, and only relevant durable decisions.
+3. Inspect active/blocked/human-required/ready Issues and native dependencies.
+4. Inspect matching `gac-claim/issue-N-gK` claim refs, corresponding `agent/issue-N-gK` work refs, PR/CI/commit state, and checkpoints.
+5. Reconcile checkpoint prose against actual GitHub evidence.
 
-Do not edit before this recovery pass.
+Do not edit before recovery.
 
 ## Stop conditions
 
-Do not modify a task when its Issue is closed/cancelled/blocked/human-required, a higher generation exists, your lease expired/yielded, or repository policy denies the action.
+Stop task writes when Issue is closed/cancelled/blocked/human-required, a higher valid claim generation exists, your lease expired/yielded, or repository policy denies the action.
 
-Repository policy and current GitHub evidence outrank checkpoints.
+Repository policy/current GitHub evidence outrank checkpoints.
 
 ## Claim work
 
 Own exactly one primary Issue.
 
-Never use labels as a mutex. Claim only through the generation protocol in `docs/PROTOCOL.md`: create the structured empty claim commit, then atomically create the exact next generation ref.
+Never use labels/comments as mutex. Follow `docs/PROTOCOL.md`:
 
-If exact claim/ref creation is unavailable, do not approximate it with comments or labels; stop that claim and report the missing capability.
+1. create structured empty claim commit;
+2. atomically create exact immutable next `gac-claim/...` ref;
+3. read-back validate owner/source;
+4. only winner creates/uses matching generation-specific `agent/...` work branch from claim source.
 
-On takeover, create the new generation from the previous generation's durable HEAD. Never continue writing an older generation after a higher one exists.
+If exact claim operations are unavailable, fail closed. Do not approximate authority.
+
+Claim refs never receive implementation commits. Work only on matching work branch. Older claim/work generations are stale after a higher claim exists.
 
 ## Work loop
 
 While authority remains valid:
 
-1. execute the next acceptance criterion;
-2. make the smallest coherent change;
-3. run available relevant validation;
-4. commit and push recoverable progress;
-5. re-check generation/Issue state before consequential writes;
+1. execute next acceptance criterion;
+2. make smallest coherent change;
+3. validate;
+4. commit/push recoverable work to current work branch;
+5. re-check claim generation/Issue state before consequential writes;
 6. checkpoint meaningful durable progress;
-7. renew before the configured threshold or yield before the session ends.
+7. renew before threshold or yield before session ends.
 
 Never claim unpushed work is durable.
 
-## Checkpoint
+## Checkpoint and yield
 
-Use `GAC CHECKPOINT v1` from `docs/PROTOCOL.md`. Keep it concise: completed, verified, remaining, one next action, blockers, and human decision if any. Do not include raw chain-of-thought or command diaries.
+Use `GAC CHECKPOINT v1`. Keep completed, verified, remaining, one next action, blockers, and human request concise. No chain-of-thought/command diary.
 
-A graceful session should yield after pushing/checkpointing so the next scheduled session can take over immediately.
+Graceful sessions push/checkpoint then `yielded` so next scheduled session may take over immediately.
 
 ## Finalize
 
-Before terminal state, re-read requirements/dependencies, confirm highest generation and lease margin, validate, push, then re-check authority.
+Re-read requirements/dependencies, confirm highest claim + lease margin, validate/push, then re-check authority.
 
-Open a PR only when integration-ready. A coding task is `agent:done` only after intended work exists in the authoritative base branch and the Issue is closed. If merge needs human approval, use `agent:human-required`; do not guess or mark done.
+Open PR only when integration-ready from current **work branch**. Coding task is `agent:done` only after intended result exists in authoritative base and Issue is closed. Human merge/decision required -> `agent:human-required`, never guess.
 
 ## Hard rules
 
 - Native Issue dependencies are authoritative.
-- Older generation branches are stale, never current work.
-- Do not force-push generation branches.
-- Do not weaken tests to obtain green CI.
-- Do not expose secrets or bypass repository protections.
-- Do not edit `.agent/**`, `.agents/**`, or GAC protocol files unless the Issue explicitly authorizes control-plane changes.
+- Claim refs are immutable control metadata; never push work to them.
+- Never force-push/rebase generation work branches under normal GAC operation.
+- Never weaken tests for green CI, expose secrets, or bypass repository protections.
+- Do not edit `.agent/**`, `.agents/**`, or GAC protocol files unless Issue explicitly authorizes control-plane changes.
