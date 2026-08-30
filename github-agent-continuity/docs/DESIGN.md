@@ -21,6 +21,7 @@ GAC v0.1 must support:
 - parallel work on independent tasks;
 - deterministic task claiming using GitHub-native primitives;
 - expiring task ownership so abandoned work can be recovered;
+- atomic serialization of both initial claims and stale-lease takeovers;
 - dependency-aware task selection;
 - checkpointing progress without requiring an external database;
 - isolated task branches and pull requests;
@@ -87,7 +88,8 @@ GAC separates durable declarative memory from operational GitHub state.
 | Durable project decisions | `.agent/DECISIONS.md` |
 | Work queue and task requirements | GitHub Issues |
 | Task lifecycle state | Issue state + labels |
-| Task ownership | claim branch + latest lease checkpoint |
+| Task ownership generation | highest existing `agent-lock/issue-N-gK` branch |
+| Current lease projection | latest valid checkpoint for the winning generation |
 | Implementation work | task branch + commits |
 | Integration/review | Pull Request |
 | Session recovery point | structured Issue checkpoint comment |
@@ -134,46 +136,66 @@ Dependencies use explicit Issue references such as `Depends on: #12, #13`.
 
 The agent must not claim a task whose required dependencies are incomplete.
 
-## 8. Claim protocol
+## 8. Generational claim protocol
 
 Labels alone are not a concurrency lock because two sessions can observe `agent:ready` simultaneously.
 
-For Issue `#42`, the atomic ownership primitive is a dedicated GitHub branch:
+For Issue `#42`, ownership is serialized by generation branches:
 
 ```text
-agent-lock/issue-42
+agent-lock/issue-42-g1
+agent-lock/issue-42-g2
+agent-lock/issue-42-g3
 ```
 
-A session attempts to create that branch from the current default-branch HEAD.
+Each lock branch is created from the current default-branch HEAD and contains no implementation work.
 
-- creation succeeds: the session may establish ownership;
-- creation fails because the branch already exists: the session does not own the task and must select another candidate or evaluate stale-lease recovery.
+### Initial claim
 
-GitHub ref creation is the serialization point. Issue labels are human-readable projections, not the mutex.
+If no lock generation exists, competing sessions both attempt to create:
 
-The working branch is separate:
+```text
+agent-lock/issue-42-g1
+```
+
+Exactly one creation may succeed. A session that receives an already-exists/conflict result does not own the task and must re-read GitHub state.
+
+### Recovery claim
+
+If the highest generation is `gK` and its lease is expired, competing recovery sessions both attempt to create exactly:
+
+```text
+agent-lock/issue-42-g(K+1)
+```
+
+Again, only one creation may succeed. The winner becomes the only session allowed to publish the ownership checkpoint for generation `K+1`.
+
+This makes GitHub ref creation the compare-and-create serialization point for every ownership transfer, not only the first claim.
+
+The working branch remains separate and stable across recovery:
 
 ```text
 agent/42-short-task-name
 ```
 
-The lock branch contains no implementation work.
+A recovery owner continues the existing work branch rather than creating a fresh implementation branch unless the branch is missing or repository policy requires otherwise.
 
 ## 9. Lease protocol
 
-A claim is bounded by a lease recorded in a structured checkpoint comment on the Issue.
+A winning generation is bounded by a lease recorded in a structured checkpoint comment on the Issue.
 
 Default lease duration for the template: **90 minutes**.
 
-The claim checkpoint contains:
+The ownership checkpoint contains:
 
 ```text
 AGENT CHECKPOINT v1
 
 Task: #42
 Owner: <unique-session-id>
+Generation: 3
 Status: active
-Lock: agent-lock/issue-42
+Lock: agent-lock/issue-42-g3
 Work branch: agent/42-short-task-name
 Lease started: <ISO-8601 UTC>
 Lease until: <ISO-8601 UTC>
@@ -189,27 +211,31 @@ Blockers: none
 Human decision required: none
 ```
 
-A later checkpoint from the same owner renews the lease by writing a new `Lease until` value.
+A later checkpoint from the same owner and same generation may renew the lease by writing a new `Lease until` value.
 
-Issue comments are immutable history; the latest valid checkpoint for the current lock owner is the current lease projection.
+Issue comments are immutable history. The current lease is the latest structurally valid checkpoint that names the highest existing lock generation.
+
+A checkpoint for an older generation is stale even if its timestamp appears newer.
 
 ## 10. Stale lease recovery
 
-A lock branch may remain after a session terminates unexpectedly.
+A lock generation is never reused.
 
 A different session may recover a task only when all are true:
 
-1. the latest valid lease has expired;
-2. repository/Issue/PR evidence does not show a newer unparsed checkpoint;
-3. the task is not complete;
-4. the recovering session first inspects the work branch, commits, PR, CI, and acceptance criteria;
-5. recovery records a new ownership checkpoint before modifying implementation.
+1. it has identified the highest existing lock generation `gK`;
+2. the latest valid checkpoint for `gK` has expired;
+3. repository/Issue/PR evidence does not show a later valid renewal for `gK`;
+4. the task is not complete;
+5. the recovering session first inspects the work branch, commits, PR, CI, and acceptance criteria;
+6. it atomically wins creation of `agent-lock/issue-N-g(K+1)`;
+7. it records the new ownership checkpoint before modifying implementation.
 
-Recovery must continue existing durable progress rather than restart the task.
+If creation of `g(K+1)` fails, another recovery session won. The loser must re-read state and must not write to the task branch under the old generation.
 
-For v0.1, recovery reuses the existing lock branch rather than deleting/recreating it. Ownership transfer is represented by a new checkpoint with a new `Owner` and new lease interval. This avoids requiring lock deletion as part of the normal recovery path.
+Recovery continues existing durable progress rather than restarting the task.
 
-Because ref existence only serializes the initial claim, takeover correctness depends on the stale-lease rules and latest-checkpoint reconciliation. GAC v0.1 therefore targets coarse scheduled concurrency, not adversarial high-frequency distributed locking.
+Old lock generations remain as an audit trail in v0.1. Deleting old lock branches is optional maintenance and is not part of normal ownership transfer.
 
 ## 11. Session bootstrap
 
@@ -219,8 +245,8 @@ Every independent session performs this sequence before editing:
 2. read `.agent/PROJECT.md` and `.agent/GOALS.md`;
 3. read relevant durable decisions;
 4. inspect active/blocked/human-required/ready Issues;
-5. inspect open agent PRs and relevant recent commits;
-6. recover owned or stale interrupted work when appropriate;
+5. inspect lock generations, open agent PRs, and relevant recent commits;
+6. recover interrupted work only through the generational claim protocol;
 7. otherwise rank eligible ready tasks;
 8. claim exactly one primary task;
 9. reconcile its latest checkpoint with actual branch/PR/CI state;
@@ -267,7 +293,8 @@ Checkpoints are written after meaningful recoverable progress, not only at grace
 A checkpoint must make these questions answerable by a zero-context successor:
 
 - What task is this?
-- Who currently owns it?
+- Which lock generation owns it?
+- Who currently owns that generation?
 - Until when?
 - Which branch contains durable work?
 - What is already complete?
@@ -284,14 +311,15 @@ Important implementation progress must be committed and pushed before a checkpoi
 
 Before completion, an agent must:
 
-1. evaluate every acceptance criterion;
-2. run available relevant validation;
-3. inspect the final diff;
-4. push all durable implementation work;
-5. create/update the task PR when the project uses PRs;
-6. write a final checkpoint;
-7. transition the Issue to done/closed;
-8. leave the lock branch for audit in v0.1.
+1. confirm it still owns the highest lock generation and has a valid lease;
+2. evaluate every acceptance criterion;
+3. run available relevant validation;
+4. inspect the final diff;
+5. push all durable implementation work;
+6. create/update the task PR when the project uses PRs;
+7. write a final checkpoint;
+8. transition the Issue to done/closed;
+9. leave lock generations for audit in v0.1.
 
 Lock cleanup may be added later as maintenance but is not required for correctness.
 
@@ -308,7 +336,7 @@ Lock cleanup may be added later as maintenance but is not required for correctne
 
 The latest checkpoint must state the exact unblock condition or one precise human decision request.
 
-A session may claim another independent ready Issue after releasing active ownership projection for blocked/human-required work.
+A session may claim another independent ready Issue after it has checkpointed blocked/human-required state and stopped modifying the prior task branch.
 
 ## 17. Scheduled bootstrap prompt
 
@@ -361,14 +389,16 @@ Required scenario reviews:
 
 1. **Cold start:** zero-context agent can identify the next eligible task.
 2. **Interrupted session:** successor recovers branch progress from a checkpoint and repository evidence.
-3. **Simultaneous initial claim:** only one concurrent branch creation for the same `agent-lock/issue-N` succeeds.
-4. **Different tasks:** two sessions can own different Issues simultaneously.
-5. **Expired lease:** a successor can recover abandoned work without discarding commits.
-6. **Dependency:** blocked-by-dependency task is not selected early.
-7. **Human gate:** a task requiring human decision is not guessed through.
-8. **Conflict awareness:** overlapping shared scope is surfaced before broad edits.
-9. **Durability:** checkpoint never claims unpushed progress as durable.
-10. **Extraction:** copied project directory contains no dependency on MindRail paths, code, or concepts.
+3. **Simultaneous initial claim:** only one concurrent creation of `agent-lock/issue-N-g1` succeeds.
+4. **Simultaneous takeover:** after `gK` expires, only one concurrent creation of `g(K+1)` succeeds.
+5. **Different tasks:** two sessions can own different Issues simultaneously.
+6. **Expired lease:** a successor can recover abandoned work without discarding commits.
+7. **Stale owner fencing:** an older generation must stop writing after a newer generation exists.
+8. **Dependency:** blocked-by-dependency task is not selected early.
+9. **Human gate:** a task requiring human decision is not guessed through.
+10. **Conflict awareness:** overlapping shared scope is surfaced before broad edits.
+11. **Durability:** checkpoint never claims unpushed progress as durable.
+12. **Extraction:** copied project directory contains no dependency on MindRail paths, code, or concepts.
 
 ## 21. Planned v0.1 artifacts
 
@@ -398,5 +428,4 @@ The following are explicitly deferred beyond v0.1:
 - cryptographic owner identities;
 - strict filesystem-level scope locking;
 - cross-repository goals;
-- non-GitHub adapters;
-- stronger compare-and-swap semantics for stale lease takeover.
+- non-GitHub adapters.
