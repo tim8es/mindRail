@@ -32,6 +32,7 @@ base_branch: default
 lease_ttl_minutes: 50
 renewal_threshold_minutes: 15
 finalization_margin_minutes: 10
+clock_skew_grace_minutes: 5
 claim_branch_prefix: gac-claim/issue-
 work_branch_prefix: agent/issue-
 ```
@@ -39,6 +40,8 @@ work_branch_prefix: agent/issue-
 For hourly scheduled workers, 50 minutes normally lets a dead short session expire before the next hourly run. Choose TTL for actual cadence; avoid a TTL longer than scheduler interval unless deliberate.
 
 `finalization_margin_minutes` must be lower than lease TTL and large enough to re-read authority, push, and perform finalization checks.
+
+`clock_skew_grace_minutes` is a **takeover-only safety margin** when trustworthy current GitHub/server time is unavailable. The contender may use local time only after normal lease expiry plus this grace. The current owner must not use grace as extra execution time.
 
 ## 3. Create repository labels
 
@@ -67,7 +70,8 @@ The agent/tool surface must expose equivalent operations for:
 - list/match refs for exact **claim prefix**;
 - read commits/tree/parent metadata;
 - read matching generation work branches;
-- read PR and CI/status evidence.
+- read PR and CI/status evidence;
+- obtain trustworthy current GitHub/server time when the integration exposes it, or apply configured local-time skew grace when it does not.
 
 ### Claim/work
 
@@ -90,8 +94,6 @@ Grant only what workflow needs. Full autonomous protocol generally needs:
 - Pull Requests read/write;
 - Issue dependency read, and write only if agent may manage relationships;
 - CI/status read sufficient for required checks.
-
-GitHub Issue dependencies are available on GitHub Free, Pro, Team, and Enterprise Cloud; repository permissions still determine who may create/manage relationships.
 
 Merging/deploying may intentionally remain human-only through branch rules, environments, CODEOWNERS, or repository policy. GAC does not grant credentials or bypass protections.
 
@@ -119,7 +121,7 @@ A dependent GAC task becomes eligible only after blockers reach successful termi
 
 Use `SCHEDULED_PROMPT.md`.
 
-Multiple independent scheduled sessions may run same generic prompt. They compete for exact immutable **claim refs**; compliant losers re-read state and select another eligible task.
+Multiple independent scheduled sessions may run the same generic prompt. They compete for exact immutable **claim refs**; compliant losers re-read state and select another eligible task.
 
 Do not embed project state in scheduler prompt. Long-lived context belongs in repository/GitHub state.
 
@@ -129,18 +131,19 @@ Before unattended use, manually verify:
 
 - Issue template renders;
 - required labels exist;
-- native Issue dependencies readable by agent integration;
+- native Issue dependencies are readable by the agent integration;
 - agent can list matching claim refs;
-- agent can create empty claim commit + exact claim ref in disposable test namespace;
-- second attempt at same exact claim ref returns detectable conflict;
+- agent can create empty claim commit + exact claim ref in a disposable test namespace;
+- second attempt at the same exact claim ref returns a detectable conflict;
 - winning owner can create matching generation work branch from recorded source;
 - claim ref remains unchanged while work branch advances;
-- PR from work branch does not contain claim commit in its ancestry/diff history;
+- PR from work branch does not contain claim commit in product ancestry;
 - comment metadata exposes `created_at`/`updated_at`;
+- current-time source/fallback behaves according to `PROTOCOL.md`;
 - branch protection behaves as expected for PR/merge.
 
-Use a disposable test Issue/repository for first concurrency probe.
+Use a disposable test Issue/repository for the first concurrency probe.
 
 ## 10. Temporary-host warning
 
-When GAC is developed inside another repository branch, do not create GAC labels/settings on that host merely to test file contents. Repository metadata is not branch-isolated. Apply bootstrap only after GAC is installed in intended target repository or disposable test repository.
+When GAC is developed inside another repository branch, do not create GAC labels/settings or test claim/work refs on that host merely to validate template files. Repository metadata and refs are not isolated by the prototype directory. Apply/bootstrap and run concurrency probes only after GAC is installed in the intended target repository or a disposable test repository.
