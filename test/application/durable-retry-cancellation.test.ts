@@ -615,7 +615,7 @@ describe('durable retry and cancellation', () => {
     second.database.close();
   });
 
-  it('prevents a stale CreateTask batch from surviving beneath CancelGoal with independent coordinators', async () => {
+  it('rejects a stale CancelGoal snapshot when an independent persistence handle admits a Task before its batch', async () => {
     const path = databasePath();
     const now = new Date('2026-08-30T22:00:00.000Z');
     let seed = await openDispatcher(path, 'cancel-db-race-seed', now);
@@ -624,17 +624,27 @@ describe('durable retry and cancellation', () => {
     seed.database.close();
 
     const cancelApp = await openDispatcher(path, 'cancel-db-race-controller', now);
-    const createApp = await openDispatcher(path, 'cancel-db-race-creator', now);
-    let cancelArrivedResolve!: () => void;
-    let releaseCancel!: () => void;
-    const cancelArrived = new Promise<void>((resolve) => (cancelArrivedResolve = resolve));
-    const cancelRelease = new Promise<void>((resolve) => (releaseCancel = resolve));
+    const injector = await openPersistence(path);
+    const concurrentTask: Task = {
+      workspaceId: 'ws-a',
+      id: 'cancel-db-race-concurrent-task',
+      goalId: seeded.goal.id,
+      title: 'Concurrent Task',
+      objective: 'Commit after the cancellation snapshot but before its durable batch.',
+      acceptanceCriteria: ['Never survive beneath a cancelled Goal.'],
+      requiredCapabilities: [],
+      dependencyTaskIds: [],
+      status: 'ready',
+      revision: 1,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
     cancelApp.database.beforeNextBatch(async () => {
-      cancelArrivedResolve();
-      await cancelRelease;
+      const injected = await injector.persistence.createTask({ task: concurrentTask });
+      expect(injected).toMatchObject({ kind: 'committed', value: concurrentTask });
     });
 
-    const cancelPromise = cancelApp.dispatcher.dispatchCommand({
+    const staleCancellation = await cancelApp.dispatcher.dispatchCommand({
       protocolVersion: '0.1',
       command: 'CancelGoal',
       commandId: 'cancel-db-race-goal',
@@ -644,31 +654,13 @@ describe('durable retry and cancellation', () => {
       expectedGoalRevision: seeded.goal.revision,
       reason: { code: 'controller.cancelled', summary: 'Race database task admission.' },
     });
-    await cancelArrived;
-
-    const createdResponse = await createApp.dispatcher.dispatchCommand({
-      protocolVersion: '0.1',
-      command: 'CreateTask',
-      commandId: 'cancel-db-race-create',
-      workspaceId: 'ws-a',
-      actor: seeded.systemActor,
-      goalId: seeded.goal.id,
-      title: 'Concurrent Task',
-      objective: 'Either commit before cancellation or be rejected.',
-      acceptanceCriteria: ['Never survive under a cancelled Goal.'],
-      requiredCapabilities: [],
-      dependencyTaskIds: [],
-    });
-    const created = success<Task>(createdResponse);
-    releaseCancel();
-    const staleCancellation = await cancelPromise;
     expect(staleCancellation).toHaveProperty('error');
 
     const afterRace = await cancelApp.persistence.loadWorkspaceState('ws-a');
     expect(afterRace?.goals.find((goal) => goal.id === seeded.goal.id)?.status).toBe('active');
-    expect(afterRace?.tasks.find((task) => task.id === created.id)?.status).toBe('ready');
+    expect(afterRace?.tasks.find((task) => task.id === concurrentTask.id)).toEqual(concurrentTask);
 
-    const freshCancel = await createApp.dispatcher.dispatchCommand({
+    const freshCancel = await cancelApp.dispatcher.dispatchCommand({
       protocolVersion: '0.1',
       command: 'CancelGoal',
       commandId: 'cancel-db-race-goal-fresh',
@@ -681,12 +673,12 @@ describe('durable retry and cancellation', () => {
     const committed = success<CancelGoalResult>(freshCancel);
     expect(committed.goal.status).toBe('cancelled');
     expect(committed.tasks).toHaveLength(2);
-    const finalSnapshot = await createApp.persistence.loadWorkspaceState('ws-a');
+    const finalSnapshot = await cancelApp.persistence.loadWorkspaceState('ws-a');
     const finalGoalTasks =
       finalSnapshot?.tasks.filter((task) => task.goalId === seeded.goal.id) ?? [];
     expect(finalGoalTasks).toHaveLength(2);
     expect(finalGoalTasks.every((task) => task.status === 'cancelled')).toBe(true);
     cancelApp.database.close();
-    createApp.database.close();
+    injector.database.close();
   });
 });
