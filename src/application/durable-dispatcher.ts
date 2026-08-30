@@ -232,10 +232,45 @@ async function dispatchDurableQuery(
         );
         return querySuccess(query, pageRows(rows, window.limit, window.offset));
       }
-      case 'ListGoals':
-      case 'ListGoalTasks':
-      case 'GetTaskExecutionView':
-        return unsupportedQuery(query);
+      case 'ListGoals': {
+        if (!(await options.persistence.getWorkspace(query.workspaceId))) {
+          return queryFailure(query, 'NOT_FOUND', 'Durable Workspace was not found.');
+        }
+        const window = listWindow(query.limit, query.cursor);
+        if (!window) return invalidListWindow(query);
+        const rows = await options.persistence.listGoals(
+          query.workspaceId,
+          window.limit + 1,
+          window.offset,
+        );
+        return querySuccess(query, pageRows(rows, window.limit, window.offset));
+      }
+      case 'ListGoalTasks': {
+        if (!(await options.persistence.getGoal(query.workspaceId, query.goalId))) {
+          return queryFailure(query, 'NOT_FOUND', 'Durable Goal was not found.');
+        }
+        const window = listWindow(query.limit, query.cursor);
+        if (!window) return invalidListWindow(query);
+        const rows = await options.persistence.listGoalTasks(
+          query.workspaceId,
+          query.goalId,
+          window.limit + 1,
+          window.offset,
+        );
+        return querySuccess(query, pageRows(rows, window.limit, window.offset));
+      }
+      case 'GetTaskExecutionView': {
+        const now = options.now();
+        return durableResourceQuery(
+          query,
+          await options.persistence.getTaskExecutionView(
+            query.workspaceId,
+            query.taskId,
+            now.toISOString(),
+            new Date(now.getTime() - options.sessionTimeoutMs).toISOString(),
+          ),
+        );
+      }
     }
   } catch (error) {
     if (error instanceof PersistenceError) return persistenceQueryFailure(query, error);
@@ -756,14 +791,6 @@ function persistenceFailure(command: ApplicationCommand, error: PersistenceError
     case 'INTEGRITY_ERROR':
       return commandFailure(command, 'INTERNAL_ERROR', 'Durable state integrity check failed.');
   }
-}
-
-function unsupportedQuery(query: ApplicationQuery): QueryFailure {
-  return queryFailure(
-    query,
-    'UNSUPPORTED_OPERATION',
-    `${query.query} is not yet integrated in the durable application composition.`,
-  );
 }
 
 function querySuccess<T>(query: ApplicationQuery, result: T): QueryResponse<T> {

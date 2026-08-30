@@ -106,6 +106,12 @@ export interface PendingHumanPermission {
   latestDecision: PermissionDecision;
 }
 
+export interface TaskExecutionView {
+  task: Task;
+  lease?: Lease;
+  latestCheckpoint?: Checkpoint;
+}
+
 export interface WorkspaceMutationCoordinator {
   runSerialized<T>(workspaceId: string, operation: () => Promise<T>): Promise<T>;
 }
@@ -306,6 +312,19 @@ export interface DurableRuntimePersistence {
     workspaceId: string,
     requestId: string,
   ): Promise<PermissionRequest | undefined>;
+  listGoals(workspaceId: string, limit: number, offset?: number): Promise<Goal[]>;
+  listGoalTasks(
+    workspaceId: string,
+    goalId: string,
+    limit?: number,
+    offset?: number,
+  ): Promise<Task[]>;
+  getTaskExecutionView(
+    workspaceId: string,
+    taskId: string,
+    now: string,
+    sessionCutoff: string,
+  ): Promise<TaskExecutionView | undefined>;
   loadWorkspaceState(workspaceId: string): Promise<WorkspaceStateSnapshot | undefined>;
   listClaimableTasks(
     workspaceId: string,

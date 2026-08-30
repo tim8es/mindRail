@@ -29,6 +29,7 @@ import {
   type PersistenceDomainTarget,
   type PersistenceDomainValidator,
   type StoredCommandReceipt,
+  type TaskExecutionView,
   type TaskOutcomeCommitInput,
   type TaskOutcomeCommitValue,
   type WorkspaceMutationCoordinator,
@@ -1788,6 +1789,44 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     );
   }
 
+  async listGoals(workspaceId: string, limit: number, offset = 0): Promise<Goal[]> {
+    return this.readRecords<Goal>(
+      `SELECT record_json FROM goals
+       WHERE workspace_id = ? ORDER BY created_at_ms, id LIMIT ? OFFSET ?`,
+      workspaceId,
+      boundedLimit(limit),
+      boundedOffset(offset),
+    );
+  }
+
+  async getTaskExecutionView(
+    workspaceId: string,
+    taskId: string,
+    now: string,
+    sessionCutoff: string,
+  ): Promise<TaskExecutionView | undefined> {
+    const task = await this.getTask(workspaceId, taskId);
+    if (!task) return undefined;
+    const nowMs = timestampMs(now, 'Task execution view now');
+    const cutoffMs = timestampMs(sessionCutoff, 'Task execution view session cutoff');
+    const lease =
+      task.status === 'running'
+        ? await this.getEffectiveActiveLease(workspaceId, taskId, nowMs, cutoffMs)
+        : undefined;
+    const latestCheckpoint = await this.readRecord<Checkpoint>(
+      `SELECT record_json FROM checkpoints
+       WHERE workspace_id = ? AND task_id = ?
+       ORDER BY created_at_ms DESC, id DESC LIMIT 1`,
+      workspaceId,
+      taskId,
+    );
+    return {
+      task: clone(task),
+      ...(lease === undefined ? {} : { lease: clone(lease) }),
+      ...(latestCheckpoint === undefined ? {} : { latestCheckpoint: clone(latestCheckpoint) }),
+    };
+  }
+
   async loadWorkspaceState(workspaceId: string): Promise<WorkspaceStateSnapshot | undefined> {
     const workspaceRecord = await this.getWorkspace(workspaceId);
     if (!workspaceRecord) return undefined;
@@ -2598,12 +2637,28 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     return row ? Number(row.last_fencing_token) : undefined;
   }
 
-  private async listGoalTasks(workspaceId: string, goalId: string): Promise<Task[]> {
+  async listGoalTasks(
+    workspaceId: string,
+    goalId: string,
+    limit?: number,
+    offset = 0,
+  ): Promise<Task[]> {
+    if (limit === undefined) {
+      return this.readRecords<Task>(
+        `SELECT record_json FROM tasks
+         WHERE workspace_id = ? AND goal_id = ? ORDER BY created_at_ms, id`,
+        workspaceId,
+        goalId,
+      );
+    }
     return this.readRecords<Task>(
       `SELECT record_json FROM tasks
-       WHERE workspace_id = ? AND goal_id = ? ORDER BY created_at_ms, id`,
+       WHERE workspace_id = ? AND goal_id = ?
+       ORDER BY created_at_ms, id LIMIT ? OFFSET ?`,
       workspaceId,
       goalId,
+      boundedLimit(limit),
+      boundedOffset(offset),
     );
   }
 
