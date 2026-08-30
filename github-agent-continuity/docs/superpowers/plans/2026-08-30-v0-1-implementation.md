@@ -4,7 +4,7 @@
 
 **Goal:** Build a standalone GitHub-only repository template that lets disposable autonomous agent sessions recover state, claim work safely, run in parallel, checkpoint durable progress, and hand off across scheduled runs.
 
-**Architecture:** Repository files store long-lived project memory and generic agent procedure; GitHub Issues/dependencies model work; generation-specific branches provide cooperative ownership isolation; GitHub server timestamps bound leases; Issue comments project checkpoints; Pull Requests integrate finished work into the authoritative base branch.
+**Architecture:** Repository files store long-lived memory/procedure; GitHub Issues/dependencies model work; immutable generation claim refs serialize ownership; separate generation-specific work branches isolate stale writers without putting claim commits into product history; GitHub server timestamps bound leases; Issue comments project checkpoints; Pull Requests integrate work branches into authoritative base.
 
 **Tech Stack:** Markdown, YAML, GitHub Issues, Git refs/branches, GitHub REST/Git Database API, Pull Requests. No runtime/package dependency.
 
@@ -15,10 +15,11 @@
 - Standalone and extractable from MindRail.
 - GitHub-only; no external database/service/runtime dependency.
 - Cooperative coordination, not a security boundary.
-- Generation branch is both claim and work isolation boundary.
+- Immutable `gac-claim/issue-N-gK` ref owns generation; `agent/issue-N-gK` carries work.
+- Claim commits must not be product-work ancestors merely because of GAC ownership metadata.
 - GitHub-native Issue dependencies are authoritative.
-- `agent:done` only after successful integration into the authoritative base branch (or explicit non-code completion).
-- Repository metadata bootstrap must not be applied to the temporary MindRail host.
+- `agent:done` only after successful integration into authoritative base (or explicit non-code completion).
+- Repository metadata bootstrap must not be applied to temporary MindRail host.
 
 ---
 
@@ -32,10 +33,10 @@
 - Create: `github-agent-continuity/.agent/DECISIONS.md`
 - Create: `github-agent-continuity/.agent/README.md`
 
-- [ ] Define repository-local lease/default-branch configuration.
-- [ ] Define stable project-memory templates with no session diary.
-- [ ] Document standalone purpose, guarantees, limits, and extraction/install flow.
-- [ ] Verify none of these files refer to MindRail as a runtime dependency.
+- [x] Define repository-local lease/default-branch and claim/work-prefix configuration.
+- [x] Define stable project-memory templates with no session diary.
+- [x] Document standalone purpose, guarantees, limits, and extraction/install flow.
+- [x] Keep MindRail references explanatory only, never runtime dependency.
 
 ### Task 2: Executable agent procedure and protocol references
 
@@ -45,12 +46,13 @@
 - Create: `github-agent-continuity/docs/STATE_MODEL.md`
 - Create: `github-agent-continuity/docs/PARALLELISM.md`
 
-- [ ] Encode mandatory cold-start recovery before editing.
-- [ ] Encode atomic claim commit + exact generation-ref creation.
-- [ ] Encode lease renewal/yield using GitHub server timestamps.
-- [ ] Encode stale-generation isolation, dependency checks, stop conditions, and finalization.
-- [ ] Keep SKILL.md concise enough to load routinely; move reference detail into docs.
-- [ ] Verify protocol/reference documents agree on branch naming and state precedence.
+- [x] Encode mandatory cold-start recovery before editing.
+- [x] Encode atomic empty claim commit + exact immutable claim-ref creation.
+- [x] Encode separate generation work-ref creation from recorded claim source.
+- [x] Encode lease renewal/yield using GitHub server timestamps.
+- [x] Encode stale-generation isolation, dependency checks, stop conditions, and finalization.
+- [x] Keep SKILL.md compact and move reference detail into docs.
+- [x] Keep protocol/reference documents aligned on claim/work naming and state precedence.
 
 ### Task 3: GitHub installation and work templates
 
@@ -60,20 +62,24 @@
 - Create: `github-agent-continuity/docs/INSTALLATION.md`
 - Create: `github-agent-continuity/docs/SCHEDULED_PROMPT.md`
 
-- [ ] Define Issue fields for outcome, acceptance criteria, scope, validation, and human constraints.
-- [ ] State that native Issue dependencies must be configured after Issue creation and are authoritative.
-- [ ] Document required labels and minimum GitHub permissions as bootstrap metadata.
-- [ ] Document the small scheduled-session prompt.
-- [ ] Do not create labels/settings in the temporary MindRail repository.
+- [x] Define Issue fields for outcome, acceptance criteria, scope, validation, human constraints.
+- [x] State native Issue dependencies are authoritative after Issue creation.
+- [x] Document required labels/minimum GitHub capabilities/permissions.
+- [x] Document small scheduled-session prompt.
+- [x] Do not create labels/settings in temporary MindRail repository.
 
 ### Task 4: Conformance scenarios and review
 
 **Files:**
 - Create: `github-agent-continuity/tests/SCENARIOS.md`
 
-- [ ] Cover all 20 required DESIGN.md scenarios with preconditions, actions, and expected invariants.
-- [ ] Include initial-claim race, takeover race, crash windows, edited comments, yield, stale writes, finalization race, dependency cancellation, pagination, and extraction.
-- [ ] Fetch the completed project tree from the implementation branch and compare against the plan/spec.
-- [ ] Search project files for accidental MindRail coupling and placeholders.
-- [ ] Validate YAML structure by inspection/tooling available in the execution environment.
-- [ ] Record limitations honestly; do not claim runtime concurrency tests were executed unless they actually were.
+- [x] Cover design scenarios plus implementation-discovered lost-response/corruption/history-isolation cases.
+- [x] Include initial-claim race, takeover race, crash windows, edited comments, yield, stale writes, finalization race, dependency cancellation, pagination, extraction.
+- [ ] Fetch completed project tree and compare against plan/spec after final refactor.
+- [ ] Search project files for accidental operational MindRail coupling/placeholders.
+- [ ] Re-validate YAML structure after final refactor.
+- [ ] Record limitations honestly; runtime concurrency scenarios remain NOT EXECUTED unless actually exercised.
+
+## Implementation note
+
+During review, the original single generation branch design was replaced with immutable claim refs + separate generation work branches. This preserves atomic claim serialization and stale-writer isolation while preventing empty GAC claim commits from entering normal PR/base history.
