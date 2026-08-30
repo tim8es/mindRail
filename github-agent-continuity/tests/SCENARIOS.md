@@ -1,448 +1,236 @@
 # GAC v0.1 Conformance Scenarios
 
-These scenarios define expected protocol behavior. They are written so an implementation/reviewer can exercise them manually or automate them later with GitHub API tests.
+These scenarios define expected protocol behavior. They can be exercised manually or automated later with GitHub API tests.
 
-`PASS` means every expected invariant was observed. Do not mark a scenario PASS from design reasoning alone.
+`PASS` means the expected invariant was actually observed. Documentation reasoning alone is not runtime PASS evidence.
 
 ## S01 — Cold start selects eligible work
 
-**Preconditions**
+**Preconditions:** zero chat context; one executable `agent:ready` Issue; another ready-looking Issue blocked by native dependency.
 
-- zero conversation/session context;
-- `.agent/` memory populated;
-- one `agent:ready` Issue with all blockers done;
-- another ready-looking Issue still blocked by an open native dependency.
+**Actions:** run bootstrap and reconcile memory, Issues, dependencies, claim/work refs, PR/CI, checkpoints.
 
-**Actions**
-
-1. Run the session bootstrap.
-2. Read memory, Issues, dependencies, generation refs, PR/CI state.
-3. Rank executable work.
-
-**Expected invariants**
-
-- blocked task is not claimable;
-- eligible Issue can be selected without prior chat history;
-- no implementation write occurs before reconciliation.
+**Expected:** blocked task is not claimable; eligible task can be identified without prior chat; no implementation write precedes recovery.
 
 ## S02 — Simultaneous initial claim
 
-**Preconditions**
+**Preconditions:** Issue #42 eligible; no `gac-claim/issue-42-gK` exists.
 
-- Issue `#42` is eligible;
-- no `agent/issue-42-gK` ref exists.
+**Actions:** A/B create candidate g1 claim commits; both create exact `gac-claim/issue-42-g1`.
 
-**Actions**
+**Expected:** exactly one claim-ref creation succeeds; winner read-backs valid owner/source/work metadata; loser does not implement or create g2 merely because it lost.
 
-1. Sessions A and B each create candidate `g1` claim commits.
-2. Both attempt exact ref creation for `agent/issue-42-g1`.
+## S03 — Winner creates work branch separately
 
-**Expected invariants**
+**Actions:** g1 winner creates `agent/issue-42-g1` at claim `GAC-Source-Head`.
 
-- exactly one ref creation succeeds;
-- winner read-backs valid owner/source metadata;
-- loser does not modify task implementation and does not create `g2` merely because it lost.
+**Expected:** work ref points to source, not claim commit; claim ref remains unchanged; implementation commits advance work ref only.
 
-## S03 — Lost response after successful ref creation
+## S04 — Lost claim-ref response
 
-**Preconditions**
+**Actions:** GitHub creates exact claim ref but A receives no success response; A reads claim back.
 
-- A creates a valid candidate claim for `g1`.
+**Expected:** matching `GAC-Owner` lets A recover its own successful claim if lease valid; different owner means loss; no unnecessary next generation.
 
-**Actions**
+## S05 — Lost work-ref response
 
-1. GitHub creates the exact ref but A receives no success response.
-2. A re-reads `agent/issue-42-g1`.
+**Actions:** owner creates work branch but loses response; reads work ref back.
 
-**Expected invariants**
+**Expected:** valid work ref at source/descendant is reusable by same current claim owner; incompatible branch fails closed.
 
-- if the referenced claim owner equals A, A recovers its own successful claim;
-- A does not create a new generation;
-- if owner differs, A treats the claim as lost.
+## S06 — Crash before claim ref
 
-## S04 — Crash before ref creation
+**Actions:** create candidate claim commit; terminate before claim-ref creation.
 
-**Actions**
+**Expected:** no ownership exists; later session may still claim g1; dangling commit non-authoritative.
 
-1. Create candidate claim commit.
-2. Terminate session before creating generation ref.
+## S07 — Crash after claim before work ref
 
-**Expected invariants**
+**Actions:** win claim ref; terminate before work branch creation/checkpoint.
 
-- no ownership generation exists;
-- later session may still claim `g1`;
-- dangling commit is non-authoritative.
+**Expected:** claim commit still provides Issue/generation/owner/source/work-name/server time; after expiry successor can take over using prior claim source.
 
-## S05 — Crash after ref creation before checkpoint
+## S08 — Crash after pushed work before checkpoint
 
-**Actions**
+**Preconditions:** valid work branch has new pushed commits; latest checkpoint older.
 
-1. Win `g1` ref creation.
-2. Terminate before posting any checkpoint.
+**Expected:** recovery sources next generation from actual previous work HEAD; branch evidence wins over stale checkpoint.
 
-**Expected invariants**
+## S09 — Simultaneous takeover
 
-- claim commit still identifies Issue, generation, owner, source HEAD;
-- claim commit GitHub timestamp provides initial lease event;
-- after expiry a successor can create `g2` without needing a missing checkpoint.
+**Preconditions:** g3 claim expired/yielded; prior work branch valid.
 
-## S06 — Simultaneous takeover
+**Actions:** A/B read prior work HEAD, create candidate g4 claims, race exact `gac-claim/issue-42-g4`.
 
-**Preconditions**
+**Expected:** one winner; winning claim records takeover source; only winner creates/uses g4 work branch.
 
-- highest `g3` is expired or yielded;
-- Issue remains executable.
+## S10 — Stale writer isolation
 
-**Actions**
+**Preconditions:** g4 current; stale g3 session wakes.
 
-1. A and B read current `g3` HEAD.
-2. Both construct candidate `g4` claims.
-3. Both create exact `agent/issue-42-g4`.
+**Actions:** stale session re-checks claims; also model incorrect push to `agent/issue-42-g3`.
 
-**Expected invariants**
+**Expected:** compliant stale session stops; accidental push touches g3 only, never g4; current owner does not auto-import stale commit.
 
-- one winner only;
-- loser re-reads winner and does not write task work;
-- winning claim parent records takeover source.
+## S11 — Lease ignores body/local timestamps
 
-## S07 — Stale writer isolation
+**Actions:** use false body timestamp/local clock skew; compute authority.
 
-**Preconditions**
+**Expected:** claim commit GitHub committer time starts lease; valid comment GitHub `created_at` renews; body/local values cannot extend authority.
 
-- `g4` is current;
-- stale session from `g3` wakes up.
+## S12 — Edited checkpoint cannot renew
 
-**Actions**
+**Actions:** post valid active checkpoint, edit it (`updated_at != created_at`), allow prior unedited event to expire.
 
-1. Stale session re-checks generations before write.
-2. Also model an incorrect stale push to its old `g3` branch.
+**Expected:** edited comment excluded from lease authority; prose may remain hint only.
 
-**Expected invariants**
+## S13 — Expired generation cannot self-renew
 
-- compliant stale session stops immediately;
-- accidental push affects `g3` only, not `g4`;
-- current owner does not auto-import stale commit.
+**Actions:** let lease expire; old owner posts later active checkpoint without new claim.
 
-## S08 — Lease ignores body/local timestamps
+**Expected:** generation stays expired; continuation requires next claim/work generation.
 
-**Preconditions**
+## S14 — Graceful yield handoff
 
-- claim/checkpoint body contains intentionally false `Lease until` text or local clock differs from server time.
+**Actions:** owner pushes work, posts unedited `Disposition: yielded`, stops; successor evaluates before TTL.
 
-**Actions**
+**Expected:** generation terminated immediately; next claim may be created without waiting; takeover source is yielded work HEAD.
 
-1. Compute lease state.
+## S15 — Recovery when prior work branch never existed
 
-**Expected invariants**
+**Preconditions:** prior claim exists/expired; owner crashed before work-ref creation.
 
-- initial event uses GitHub claim-commit committer timestamp;
-- renewal uses GitHub comment `created_at`;
-- body/local timestamp cannot extend authority.
+**Expected:** successor uses prior claim `GAC-Source-Head` as next claim source; missing work branch is not mistaken for corruption when claim says no work was ever created.
 
-## S09 — Edited checkpoint cannot renew
+## S16 — Native dependency prevents early work
 
-**Actions**
+**Preconditions:** #20 natively blocked by open #10, even if #20 has `agent:ready`.
 
-1. Owner posts a valid active checkpoint.
-2. Comment is later edited so `updated_at != created_at`.
-3. Evaluate lease after prior unedited event expires.
+**Expected:** #20 ineligible; label cannot override native dependency.
 
-**Expected invariants**
+## S17 — Cancelled dependency is not success
 
-- edited comment is excluded from lease authority;
-- its prose may be treated only as a hint;
-- generation cannot remain active solely because of edited renewal text.
+**Preconditions:** #10 blocks #20; #10 closed with `agent:cancelled`.
 
-## S10 — Graceful yield handoff
+**Expected:** #20 does not auto-run; dependency/requirements require explicit resolution.
 
-**Actions**
+## S18 — Requirements change during work
 
-1. Current owner pushes coherent HEAD.
-2. Posts unedited `Disposition: yielded` checkpoint.
-3. Stops writing.
-4. Successor evaluates task before TTL expiry.
+**Actions:** human materially changes Issue title/body/dependencies after claim; owner begins finalization.
 
-**Expected invariants**
+**Expected:** owner re-fetches requirements/dependencies; old criteria are not silently treated current; ambiguity becomes human-required.
 
-- current generation is terminated immediately by yield;
-- successor may claim next generation without waiting for TTL;
-- successor source is yielded generation HEAD.
+## S19 — Takeover races finalization
 
-## S11 — Recovery preserves pushed work
+**Actions:** A pushes near expiry; lease expires and B wins higher claim before A post-push re-check.
 
-**Preconditions**
+**Expected:** A must not complete/close/merge as GAC owner after seeing higher claim; B is current owner. Finalization margin reduces but does not fake transactional atomicity.
 
-- expired generation has multiple implementation commits and a checkpoint whose HEAD is slightly older than branch HEAD.
+## S20 — Open PR is not done
 
-**Actions**
+**Actions:** current owner opens integration-ready PR; leave unmerged.
 
-1. Successor claims next generation from previous branch HEAD.
-2. Reconciles checkpoint with commits/diff.
+**Expected:** Issue not `agent:done`; dependents not successfully unblocked; required human merge becomes precise human-required state.
 
-**Expected invariants**
+## S21 — Claim metadata excluded from PR/base history
 
-- newest pushed durable work is preserved even when checkpoint is stale;
-- recovery does not restart completed implementation blindly.
+**Preconditions:** claim ref points to empty claim commit; work ref starts at claim source and has product commits.
 
-## S12 — Expired generation cannot self-renew
+**Actions:** compare PR from work branch to base; inspect ancestry.
 
-**Actions**
+**Expected:** claim commit is not a work-branch ancestor solely because of GAC ownership and does not need to enter base history during normal integration.
 
-1. Let current generation lease expire.
-2. Old session posts a new active checkpoint without winning a new generation.
+## S22 — Human gate is fail-closed
 
-**Expected invariants**
+**Preconditions:** destructive action, materially ambiguous product choice, missing permission, or required human merge.
 
-- expired generation does not reactivate;
-- continuation requires next generation claim;
-- late old-generation comment is ignored for execution authority.
+**Expected:** one precise human-required request; generation stops; model confidence never substitutes for authorization.
 
-## S13 — Native dependency prevents early work
+## S23 — Parallel different Issues
 
-**Preconditions**
+**Actions:** A owns `gac-claim/issue-41-g1` + `agent/issue-41-g1`; B independently owns Issue 42 pair.
 
-- Issue `#20` is natively blocked by open Issue `#10`.
+**Expected:** both may remain active; namespaces independent; each checks its own claim/lease.
 
-**Actions**
+## S24 — Shared-scope conflict awareness
 
-1. Scheduler inspects `#20` despite `agent:ready` projection.
+**Preconditions:** #41/#42 both declare central shared path.
 
-**Expected invariants**
+**Expected:** overlap surfaced/checkpointed; agents minimize churn or create integration task; they do not share a work branch.
 
-- `#20` is ineligible;
-- label cannot override native dependency.
+## S25 — Checkpoint claims unpushed work
 
-## S14 — Cancelled dependency is not success
+**Preconditions:** checkpoint claims feature X durable; actual work branch lacks X.
 
-**Preconditions**
+**Expected:** Git evidence wins; successor does not assume X exists; corrected checkpoint only after authority.
 
-- `#10` blocks `#20`;
-- `#10` is closed with `agent:cancelled`.
+## S26 — Pagination cannot hide authority
 
-**Actions**
+**Preconditions:** enough claim refs/comments to exceed default page; highest/newest not first page.
 
-1. Evaluate `#20` eligibility.
+**Expected:** matching refs/complete pagination finds highest claim; relevant comment pagination finds newest valid event.
 
-**Expected invariants**
+## S27 — Malformed claim namespace fails closed
 
-- `#20` is not automatically executable;
-- human/repository resolution is required unless dependency relation/requirements are changed explicitly.
+**Preconditions:** highest `gac-claim/issue-42-g7` exists but claim metadata malformed/mismatched.
 
-## S15 — Requirements change during work
+**Expected:** agent does not ignore g7/use g6 or guess-create g8; repair/human-required until resolved.
 
-**Actions**
+## S28 — Work branch conflicts with claim source
 
-1. Owner claims task and implements original acceptance criteria.
-2. Human materially edits Issue title/body or dependencies before finalization.
-3. Owner begins finalization.
+**Preconditions:** valid g3 claim declares source A, but `agent/issue-42-g3` exists on unrelated history B.
 
-**Expected invariants**
+**Expected:** fail closed; do not treat branch as current work and do not overwrite/force-push it.
 
-- owner re-fetches requirements/dependencies;
-- old requirements are not silently treated as current;
-- ambiguity becomes human-required rather than guessed.
+## S29 — Claim ref immutability
 
-## S16 — Takeover races finalization
+**Actions:** after claim creation, attempt ordinary implementation workflow.
 
-**Preconditions**
+**Expected:** no implementation commit advances `gac-claim/...`; all work goes to `agent/...`; changing claim ref is protocol violation/corruption.
 
-- owner A is near lease expiry.
+## S30 — Control-plane files protected by task scope
 
-**Actions**
+**Preconditions:** ordinary feature Issue lacks GAC control-plane authorization.
 
-1. A validates/pushes.
-2. Lease expires and B creates higher generation before A's post-push authority re-check.
-3. A re-checks generation.
+**Expected:** agent does not edit `.agent/config.yml`, skill, or protocol docs for convenience; separate authorized control Issue required.
 
-**Expected invariants**
+## S31 — Extraction from temporary host
 
-- A must not close/complete/merge as GAC owner after observing higher generation;
-- B is current owner;
-- finalization margin/renewal reduces but does not pretend to eliminate the cooperative race.
+**Actions:** treat `github-agent-continuity/` contents as new repository root; search operational files for host-project dependencies.
 
-## S17 — Open PR is not done
+**Expected:** no MindRail code/schema/runtime dependency; root-relative operational paths; temporary-host mentions explanatory only.
 
-**Actions**
+## S32 — Missing exact claim primitive
 
-1. Current owner opens integration-ready PR.
-2. PR remains unmerged because review is pending.
+**Preconditions:** tool can edit labels/comments/files but cannot create/read candidate claim commit + exact claim ref.
 
-**Expected invariants**
+**Expected:** fail closed; no label/comment mutex; missing capability surfaced.
 
-- Issue is not `agent:done`;
-- dependent GAC tasks do not treat this as successful delivery;
-- if human merge is required, task becomes human-required with exact request.
+## S33 — Blocked task resumes with new generation
 
-## S18 — Human gate is fail-closed
+**Actions:** g2 posts valid blocked disposition/stops; prerequisite later resolves; new session resumes.
 
-**Preconditions**
+**Expected:** g2 never revived; g3 claim created from latest valid g2 work HEAD (or claim source if no work); new owner/lease metadata.
 
-- task reaches destructive action/ambiguous product decision/missing permission/required human merge.
+## S34 — Successful dependency unblocks only after integration
 
-**Actions**
+**Preconditions:** #10 blocks #20.
 
-1. Agent evaluates next step.
+**Actions:** #10 tests pass/open PR but unmerged -> evaluate #20; then merge result, mark #10 done/close successfully -> re-evaluate.
 
-**Expected invariants**
+**Expected:** #20 ineligible before integration; may become eligible after successful terminal state if no other blockers.
 
-- agent posts one precise human-required request;
-- current generation stops;
-- model confidence is not substituted for authorization.
+## S35 — Claim winner crashes after work ref creation
 
-## S19 — Parallel different Issues
+**Actions:** win claim, create work ref at source, crash before product commit/checkpoint.
 
-**Actions**
+**Expected:** work ref remains valid at source; after lease expiry successor may take over using that same HEAD; no control commit is in work ancestry.
 
-1. A claims `#41 -> g1`.
-2. B claims independent `#42 -> g1`.
+## S36 — Previous work receives late stale push during takeover
 
-**Expected invariants**
+**Actions:** successor reads g3 work HEAD A; stale g3 pushes B after read; successor wins g4 claim using A.
 
-- both may remain active concurrently;
-- ownership namespaces do not conflict;
-- each checks its own Issue/generation/lease.
-
-## S20 — Shared-scope conflict awareness
-
-**Preconditions**
-
-- #41 and #42 both list `package.json` or another central path as shared scope.
-
-**Actions**
-
-1. Both sessions inspect active task scopes before broad shared edit.
-
-**Expected invariants**
-
-- overlap is surfaced/checkpointed;
-- agents minimize shared churn or create an integration/follow-up task;
-- they do not solve the problem by sharing a work branch.
-
-## S21 — Checkpoint claims unpushed work
-
-**Preconditions**
-
-- checkpoint says feature X is durable at HEAD `abc`;
-- actual pushed branch does not contain X.
-
-**Actions**
-
-1. Successor reconciles repository state.
-
-**Expected invariants**
-
-- branch/commit evidence wins;
-- successor does not assume X exists;
-- corrected checkpoint is written only after successor has authority.
-
-## S22 — Pagination cannot hide authority
-
-**Preconditions**
-
-- enough branches/comments exist to exceed a default API page;
-- highest generation/newest valid checkpoint is not on the first repository-wide/default page.
-
-**Actions**
-
-1. Bootstrap determines generation and lease.
-
-**Expected invariants**
-
-- matching refs or complete pagination finds highest generation;
-- relevant comment pagination finds newest valid event;
-- first-page convenience is never treated as complete state.
-
-## S23 — Malformed generation namespace fails closed
-
-**Preconditions**
-
-- highest matching `agent/issue-42-g7` exists but claim commit metadata is missing/mismatched.
-
-**Actions**
-
-1. Agent evaluates Issue #42.
-
-**Expected invariants**
-
-- agent does not ignore g7 and use g6;
-- agent does not create g8 by guessing;
-- task becomes repair/human-required until namespace corruption is resolved.
-
-## S24 — Control-plane files are protected by task scope
-
-**Preconditions**
-
-- ordinary feature Issue does not authorize GAC protocol changes.
-
-**Actions**
-
-1. Agent considers editing `.agent/config.yml` or `SKILL.md` for convenience.
-
-**Expected invariants**
-
-- edit is rejected as out of task/control scope;
-- a separate authorized control-plane Issue is required.
-
-## S25 — Extraction from temporary host
-
-**Actions**
-
-1. Treat `github-agent-continuity/` contents as root of a new repository.
-2. Search runtime/config/skill/protocol files for required paths, imports, schema references, or execution assumptions tied to the former host project.
-
-**Expected invariants**
-
-- no MindRail code/schema/runtime dependency exists;
-- all operational paths are repository-root relative;
-- temporary-host mention is explanatory only, not required for operation.
-
-## S26 — Missing exact claim primitive
-
-**Preconditions**
-
-- agent integration can edit labels/comments/normal files but cannot create/read the structured claim commit and exact generation ref.
-
-**Actions**
-
-1. Agent attempts to claim parallel work.
-
-**Expected invariants**
-
-- agent fails closed;
-- it does not use `agent:active` label or a comment as a mutex;
-- missing capability is surfaced for human/tool remediation.
-
-## S27 — Blocked task resumes with a new generation
-
-**Actions**
-
-1. `g2` posts valid `Disposition: blocked` and stops.
-2. External prerequisite later resolves and Issue is made executable.
-3. New session resumes work.
-
-**Expected invariants**
-
-- `g2` is never revived;
-- resume claims `g3` from durable `g2` HEAD;
-- owner/lease metadata belongs to the new session.
-
-## S28 — Successful completion unblocks dependent only after integration
-
-**Preconditions**
-
-- `#10` blocks `#20`.
-
-**Actions**
-
-1. #10 implementation passes tests and opens PR; leave unmerged.
-2. Evaluate #20.
-3. Merge #10 result into base, mark #10 `agent:done`, close successfully.
-4. Re-evaluate #20.
-
-**Expected invariants**
-
-- step 2: #20 remains ineligible;
-- step 4: #20 may become eligible if no other blockers exist.
+**Expected:** g4 source remains A; B stays stale on g3; B is not auto-salvaged because wall-clock is newer.
 
 ---
 
@@ -457,4 +245,4 @@ Notes:
 - limitations or deviations
 ```
 
-A documentation review can establish that the protocol addresses a scenario, but only an executed GitHub/API exercise may be reported as runtime PASS for concurrency/crash behavior.
+A documentation review can show that the protocol addresses a scenario, but only an executed GitHub/API exercise may be reported as runtime PASS for concurrency/crash behavior.
