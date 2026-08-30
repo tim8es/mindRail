@@ -4,7 +4,7 @@ This directory contains durable repository-local context used by zero-context ag
 
 ## What belongs here
 
-- `config.yml` — GAC timing/branch defaults.
+- `config.yml` — GAC timing/ref defaults.
 - `PROJECT.md` — stable mission, boundaries, architecture principles, success definition.
 - `GOALS.md` — strategic direction across multiple Issues.
 - `DECISIONS.md` — durable decisions not already authoritative elsewhere.
@@ -17,8 +17,9 @@ Operational state belongs in GitHub:
 
 - task definition/lifecycle → Issues;
 - dependencies → native Issue dependencies;
-- ownership/work → generation branches;
-- checkpoints → Issue comments;
+- ownership generation → immutable `gac-claim/issue-N-gK` refs;
+- implementation → matching `agent/issue-N-gK` work branches;
+- checkpoints/renewal/yield projection → Issue comments;
 - integration → Pull Requests/base branch.
 
 ## Concurrent edits
