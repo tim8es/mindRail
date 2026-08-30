@@ -615,7 +615,7 @@ describe('durable retry and cancellation', () => {
     second.database.close();
   });
 
-  it('rejects a stale CancelGoal snapshot when an independent persistence handle admits a Task before its batch', async () => {
+  it('rejects a stale CancelGoal snapshot when durable Task membership changes before its batch', async () => {
     const path = databasePath();
     const now = new Date('2026-08-30T22:00:00.000Z');
     let seed = await openDispatcher(path, 'cancel-db-race-seed', now);
@@ -624,7 +624,6 @@ describe('durable retry and cancellation', () => {
     seed.database.close();
 
     const cancelApp = await openDispatcher(path, 'cancel-db-race-controller', now);
-    const injector = await openPersistence(path);
     const concurrentTask: Task = {
       workspaceId: 'ws-a',
       id: 'cancel-db-race-concurrent-task',
@@ -640,8 +639,30 @@ describe('durable retry and cancellation', () => {
       updatedAt: now.toISOString(),
     };
     cancelApp.database.beforeNextBatch(async () => {
-      const injected = await injector.persistence.createTask({ task: concurrentTask });
-      expect(injected).toMatchObject({ kind: 'committed', value: concurrentTask });
+      await cancelApp.database
+        .prepare(
+          `INSERT INTO tasks(
+            workspace_id, id, goal_id, revision, status, created_at_ms, updated_at_ms, record_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          concurrentTask.workspaceId,
+          concurrentTask.id,
+          concurrentTask.goalId,
+          concurrentTask.revision,
+          concurrentTask.status,
+          now.getTime(),
+          now.getTime(),
+          JSON.stringify(concurrentTask),
+        )
+        .run();
+      await cancelApp.database
+        .prepare(
+          `INSERT INTO task_fencing_counters(workspace_id, task_id, last_fencing_token)
+           VALUES (?, ?, 0)`,
+        )
+        .bind(concurrentTask.workspaceId, concurrentTask.id)
+        .run();
     });
 
     const staleCancellation = await cancelApp.dispatcher.dispatchCommand({
@@ -679,6 +700,5 @@ describe('durable retry and cancellation', () => {
     expect(finalGoalTasks).toHaveLength(2);
     expect(finalGoalTasks.every((task) => task.status === 'cancelled')).toBe(true);
     cancelApp.database.close();
-    injector.database.close();
   });
 });
