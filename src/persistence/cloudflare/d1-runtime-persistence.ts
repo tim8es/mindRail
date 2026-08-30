@@ -671,6 +671,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
               activeLease.id,
               activeLease.revision,
             ),
+          this.mutationChangesGuardStatement(input.workspaceId),
         );
       }
 
@@ -679,9 +680,23 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
           .prepare(
             `UPDATE task_fencing_counters
              SET last_fencing_token = ?
-             WHERE workspace_id = ? AND task_id = ? AND last_fencing_token = ?`,
+             WHERE workspace_id = ? AND task_id = ? AND last_fencing_token = ?
+               AND EXISTS (
+                 SELECT 1 FROM tasks
+                 WHERE workspace_id = ? AND id = ? AND revision = ? AND status = ?
+               )`,
           )
-          .bind(nextFence, input.workspaceId, input.taskId, counter),
+          .bind(
+            nextFence,
+            input.workspaceId,
+            input.taskId,
+            counter,
+            input.workspaceId,
+            input.taskId,
+            task.revision,
+            task.status,
+          ),
+        this.mutationChangesGuardStatement(input.workspaceId),
       );
 
       let nextTask = task;
@@ -709,6 +724,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
               input.taskId,
               task.revision,
             ),
+          this.mutationChangesGuardStatement(input.workspaceId),
         );
       }
 
@@ -717,6 +733,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
       const value = { task: clone(nextTask), lease: clone(lease) };
       const finalReceipt = this.materializeReceipt(input.receipt, input.deferredReceipt, value);
       this.pushReceiptStatement(statements, finalReceipt);
+      statements.push(this.clearMutationBatchGuardsStatement(input.workspaceId));
       await this.batch(statements, 'claim Task');
       return { kind: 'committed', value };
     });
@@ -1205,7 +1222,13 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
         }
       }
 
+      const fencingCounter = await this.getFencingCounter(input.workspaceId, current.id);
+      if (fencingCounter === undefined) {
+        throw new PersistenceError('INTEGRITY_ERROR', `Task ${current.id} has no fencing counter.`);
+      }
+
       const statements: D1PreparedStatementLike[] = [
+        this.fencingCounterGuardStatement(input.workspaceId, current.id, fencingCounter),
         this.database
           .prepare(
             `UPDATE tasks
@@ -1304,6 +1327,17 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
 
       const currentTasks = await this.listGoalTasks(input.workspaceId, currentGoal.id);
       const cancellable = currentTasks.filter((task) => isCancellableTaskStatus(task.status));
+      const fencingCounters = new Map<string, number>();
+      for (const currentTask of cancellable) {
+        const counter = await this.getFencingCounter(input.workspaceId, currentTask.id);
+        if (counter === undefined) {
+          throw new PersistenceError(
+            'INTEGRITY_ERROR',
+            `Task ${currentTask.id} has no fencing counter.`,
+          );
+        }
+        fencingCounters.set(currentTask.id, counter);
+      }
       const outputTasks = new Map(input.tasks.map((task) => [task.id, task]));
       if (outputTasks.size !== input.tasks.length || input.tasks.length !== cancellable.length) {
         throw new PersistenceError('INVALID_RECORD', 'CancelGoal Task set is invalid.');
@@ -1365,6 +1399,11 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
       for (const currentTask of cancellable) {
         const output = outputTasks.get(currentTask.id)!;
         statements.push(
+          this.fencingCounterGuardStatement(
+            input.workspaceId,
+            currentTask.id,
+            fencingCounters.get(currentTask.id)!,
+          ),
           this.database
             .prepare(
               `UPDATE tasks
@@ -2566,6 +2605,22 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
       workspaceId,
       goalId,
     );
+  }
+
+  private fencingCounterGuardStatement(
+    workspaceId: string,
+    taskId: string,
+    expectedCounter: number,
+  ): D1PreparedStatementLike {
+    return this.database
+      .prepare(
+        `INSERT INTO mutation_batch_guards(workspace_id, ok)
+         SELECT ?, CASE WHEN EXISTS (
+           SELECT 1 FROM task_fencing_counters
+           WHERE workspace_id = ? AND task_id = ? AND last_fencing_token = ?
+         ) THEN 1 ELSE 0 END`,
+      )
+      .bind(workspaceId, workspaceId, taskId, expectedCounter);
   }
 
   private mutationChangesGuardStatement(workspaceId: string): D1PreparedStatementLike {
