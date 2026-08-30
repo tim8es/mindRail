@@ -476,7 +476,7 @@ describe('durable retry and cancellation', () => {
   it('serializes stale CreateTask persistence behind CancelGoal through one Workspace authority', async () => {
     const path = databasePath();
     const now = new Date('2026-08-30T21:00:00.000Z');
-    let seed = await openDispatcher(path, 'cancel-race-seed', now);
+    const seed = await openDispatcher(path, 'cancel-race-seed', now);
     await seed.persistence.bootstrapWorkspace(workspace());
     const seeded = await seedClaimedTask(seed.dispatcher, 'cancel-race');
     seed.database.close();
@@ -528,7 +528,7 @@ describe('durable retry and cancellation', () => {
   it('does not retain a success receipt when RetryTask loses its database CAS race', async () => {
     const path = databasePath();
     const now = new Date('2026-08-30T21:30:00.000Z');
-    let seed = await openDispatcher(path, 'retry-race-seed', now);
+    const seed = await openDispatcher(path, 'retry-race-seed', now);
     await seed.persistence.bootstrapWorkspace(workspace());
     const seeded = await seedClaimedTask(seed.dispatcher, 'retry-race');
     const failed = success<FailTaskResult>(

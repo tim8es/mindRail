@@ -504,7 +504,12 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
           .prepare(
             `INSERT INTO tasks(
               workspace_id, id, goal_id, revision, status, created_at_ms, updated_at_ms, record_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE EXISTS (
+              SELECT 1 FROM goals
+              WHERE workspace_id = ? AND id = ? AND revision = ? AND status = 'active'
+            )`,
           )
           .bind(
             task.workspaceId,
@@ -515,7 +520,11 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
             timestampMs(task.createdAt, 'Task.createdAt'),
             timestampMs(task.updatedAt, 'Task.updatedAt'),
             serializeJson(task, 'Task'),
+            task.workspaceId,
+            task.goalId,
+            parentGoal.revision,
           ),
+        this.mutationChangesGuardStatement(task.workspaceId),
         ...task.requiredCapabilities.map((capability) =>
           this.database
             .prepare(
@@ -542,6 +551,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
       ];
       this.pushAuditStatement(statements, input.auditEvent);
       this.pushReceiptStatement(statements, input.receipt);
+      statements.push(this.clearMutationBatchGuardsStatement(task.workspaceId));
       await this.batch(statements, 'create Task');
       return { kind: 'committed', value: clone(task) };
     });
@@ -1098,7 +1108,11 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
           .prepare(
             `UPDATE tasks
              SET revision = ?, status = ?, updated_at_ms = ?, record_json = ?
-             WHERE workspace_id = ? AND id = ? AND revision = ? AND status = 'failed'`,
+             WHERE workspace_id = ? AND id = ? AND revision = ? AND status = 'failed'
+               AND EXISTS (
+                 SELECT 1 FROM goals
+                 WHERE workspace_id = ? AND id = ? AND revision = ? AND status = 'active'
+               )`,
           )
           .bind(
             task.revision,
@@ -1108,14 +1122,16 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
             task.workspaceId,
             task.id,
             input.expectedRevision,
+            task.workspaceId,
+            current.goalId,
+            goal.revision,
           ),
+        this.mutationChangesGuardStatement(task.workspaceId),
       ];
       this.pushAuditStatement(statements, input.auditEvent);
       this.pushReceiptStatement(statements, input.receipt);
-      const results = await this.batch(statements, 'retry Task');
-      if (changes(results[0]!) !== 1) {
-        throw new PersistenceError('REVISION_MISMATCH', `Task ${task.id} lost its retry race.`);
-      }
+      statements.push(this.clearMutationBatchGuardsStatement(task.workspaceId));
+      await this.batch(statements, 'retry Task');
       return { kind: 'committed', value: clone(task) };
     });
   }
@@ -1206,6 +1222,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
             input.expectedTaskRevision,
             current.status,
           ),
+        this.mutationChangesGuardStatement(input.workspaceId),
       ];
       if (effectiveLease && input.lease) {
         statements.push(
@@ -1226,20 +1243,13 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
               effectiveLease.revision,
               effectiveLease.fencingToken,
             ),
+          this.mutationChangesGuardStatement(input.workspaceId),
         );
       }
       this.pushAuditStatement(statements, input.auditEvent);
       this.pushReceiptStatement(statements, input.receipt);
-      const results = await this.batch(statements, 'cancel Task');
-      if (changes(results[0]!) !== 1) {
-        throw new PersistenceError('REVISION_MISMATCH', `Task ${current.id} lost its cancel race.`);
-      }
-      if (effectiveLease && changes(results[1]!) !== 1) {
-        throw new PersistenceError(
-          'STALE_AUTHORITY',
-          `Task ${current.id} Lease lost its cancel race.`,
-        );
-      }
+      statements.push(this.clearMutationBatchGuardsStatement(input.workspaceId));
+      await this.batch(statements, 'cancel Task');
       return {
         kind: 'committed',
         value: {
@@ -1351,23 +1361,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
         }
       }
 
-      const statements: D1PreparedStatementLike[] = [
-        this.database
-          .prepare(
-            `UPDATE goals
-             SET revision = ?, status = ?, updated_at_ms = ?, record_json = ?
-             WHERE workspace_id = ? AND id = ? AND revision = ? AND status = 'active'`,
-          )
-          .bind(
-            input.goal.revision,
-            input.goal.status,
-            timestampMs(input.goal.updatedAt, 'Goal.updatedAt'),
-            serializeJson(input.goal, 'Goal'),
-            input.workspaceId,
-            input.goal.id,
-            input.expectedGoalRevision,
-          ),
-      ];
+      const statements: D1PreparedStatementLike[] = [];
       for (const currentTask of cancellable) {
         const output = outputTasks.get(currentTask.id)!;
         statements.push(
@@ -1387,6 +1381,7 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
               currentTask.revision,
               currentTask.status,
             ),
+          this.mutationChangesGuardStatement(input.workspaceId),
         );
       }
       for (const effective of effectiveLeases) {
@@ -1409,17 +1404,38 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
               effective.revision,
               effective.fencingToken,
             ),
+          this.mutationChangesGuardStatement(input.workspaceId),
         );
       }
+      statements.push(
+        this.database
+          .prepare(
+            `UPDATE goals
+             SET revision = ?, status = ?, updated_at_ms = ?, record_json = ?
+             WHERE workspace_id = ? AND id = ? AND revision = ? AND status = 'active'
+               AND NOT EXISTS (
+                 SELECT 1 FROM tasks
+                 WHERE workspace_id = ? AND goal_id = ?
+                   AND status IN ('pending', 'ready', 'running', 'blocked')
+               )`,
+          )
+          .bind(
+            input.goal.revision,
+            input.goal.status,
+            timestampMs(input.goal.updatedAt, 'Goal.updatedAt'),
+            serializeJson(input.goal, 'Goal'),
+            input.workspaceId,
+            input.goal.id,
+            input.expectedGoalRevision,
+            input.workspaceId,
+            input.goal.id,
+          ),
+        this.mutationChangesGuardStatement(input.workspaceId),
+      );
       this.pushAuditStatement(statements, input.auditEvent);
       this.pushReceiptStatement(statements, input.receipt);
-      const results = await this.batch(statements, 'cancel Goal');
-      const mutationCount = 1 + cancellable.length + effectiveLeases.length;
-      for (let index = 0; index < mutationCount; index += 1) {
-        if (changes(results[index]!) !== 1) {
-          throw new PersistenceError('CONFLICT', `Goal ${currentGoal.id} lost its cancel race.`);
-        }
-      }
+      statements.push(this.clearMutationBatchGuardsStatement(input.workspaceId));
+      await this.batch(statements, 'cancel Goal');
       return {
         kind: 'committed',
         value: {
@@ -2552,6 +2568,21 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     );
   }
 
+  private mutationChangesGuardStatement(workspaceId: string): D1PreparedStatementLike {
+    return this.database
+      .prepare(
+        `INSERT INTO mutation_batch_guards(workspace_id, ok)
+         VALUES (?, changes())`,
+      )
+      .bind(workspaceId);
+  }
+
+  private clearMutationBatchGuardsStatement(workspaceId: string): D1PreparedStatementLike {
+    return this.database
+      .prepare(`DELETE FROM mutation_batch_guards WHERE workspace_id = ?`)
+      .bind(workspaceId);
+  }
+
   private async readRecord<T>(sql: string, ...values: unknown[]): Promise<T | undefined> {
     const row = await this.first<RecordRow>(sql, ...values);
     return row ? parseJson<T>(row.record_json, 'canonical record') : undefined;
@@ -2593,6 +2624,11 @@ export class D1RuntimePersistence implements DurableRuntimePersistence {
     try {
       return await this.database.batch(statements);
     } catch (error) {
+      const message = errorMessage(error);
+      if (message.includes('mutation_batch_guard_ok')) {
+        const code = context === 'retry Task' ? 'REVISION_MISMATCH' : 'CONFLICT';
+        throw new PersistenceError(code, `${context} lost its durable mutation race.`);
+      }
       throw wrapDatabaseError(context, error);
     }
   }
