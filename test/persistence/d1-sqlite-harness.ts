@@ -9,6 +9,7 @@ import type {
 export class SqliteD1Database implements D1DatabaseLike {
   private readonly database: DatabaseSync;
   private failNextBatchAfterStatementCount: number | undefined;
+  private beforeNextBatchHook: (() => Promise<void>) | undefined;
 
   constructor(path: string) {
     this.database = new DatabaseSync(path);
@@ -20,6 +21,9 @@ export class SqliteD1Database implements D1DatabaseLike {
   }
 
   async batch(statements: D1PreparedStatementLike[]): Promise<D1ResultLike[]> {
+    const beforeBatch = this.beforeNextBatchHook;
+    this.beforeNextBatchHook = undefined;
+    if (beforeBatch) await beforeBatch();
     this.database.exec('BEGIN IMMEDIATE;');
     try {
       const results: D1ResultLike[] = [];
@@ -50,6 +54,10 @@ export class SqliteD1Database implements D1DatabaseLike {
       throw new TypeError('statementCount must be a non-negative safe integer.');
     }
     this.failNextBatchAfterStatementCount = statementCount;
+  }
+
+  beforeNextBatch(hook: () => Promise<void>): void {
+    this.beforeNextBatchHook = hook;
   }
 
   async exec(sql: string): Promise<void> {

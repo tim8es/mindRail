@@ -22,6 +22,8 @@ import type { CanonicalDomainValidator } from '../runtime/domain-validation.ts';
 import {
   InMemoryControlPlane,
   type BlockTaskResult,
+  type CancelGoalResult,
+  type CancelTaskResult,
   type ClaimTaskResult,
   type CompleteTaskResult,
   type EndSessionResult,
@@ -258,7 +260,10 @@ function isFirstDurableLoopCommand(command: ProtocolCommand): boolean {
     command.command === 'CompleteTask' ||
     command.command === 'FailTask' ||
     command.command === 'BlockTask' ||
-    command.command === 'ResumeTask'
+    command.command === 'ResumeTask' ||
+    command.command === 'RetryTask' ||
+    command.command === 'CancelTask' ||
+    command.command === 'CancelGoal'
   );
 }
 
@@ -534,6 +539,68 @@ async function commitDurableSuccess(
         await options.persistence.resumeTask({
           task: result,
           expectedRevision: command.expectedTaskRevision,
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
+        }),
+      );
+    }
+    case 'RetryTask': {
+      const result = semanticResponse.result as Task;
+      const now = result.updatedAt;
+      return resolveMutationResult(
+        command,
+        await options.persistence.retryTask({
+          task: result,
+          expectedRevision: command.expectedTaskRevision,
+          now,
+          sessionCutoff: new Date(Date.parse(now) - options.sessionTimeoutMs).toISOString(),
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
+        }),
+      );
+    }
+    case 'CancelTask': {
+      const result = semanticResponse.result as CancelTaskResult;
+      const now = result.task.updatedAt;
+      return resolveMutationResult(
+        command,
+        await options.persistence.cancelTask({
+          workspaceId: command.workspaceId,
+          task: result.task,
+          ...(result.lease === undefined ? {} : { lease: result.lease }),
+          expectedTaskRevision: command.expectedTaskRevision,
+          now,
+          sessionCutoff: new Date(Date.parse(now) - options.sessionTimeoutMs).toISOString(),
+          receipt: receiptFor(
+            command,
+            fingerprint,
+            successResponse(command, result),
+            options.now(),
+          ),
+        }),
+      );
+    }
+    case 'CancelGoal': {
+      const result = semanticResponse.result as CancelGoalResult;
+      const now = result.goal.updatedAt;
+      return resolveMutationResult(
+        command,
+        await options.persistence.cancelGoal({
+          workspaceId: command.workspaceId,
+          goal: result.goal,
+          tasks: result.tasks,
+          leases: result.leases,
+          expectedGoalRevision: command.expectedGoalRevision,
+          now,
+          sessionCutoff: new Date(Date.parse(now) - options.sessionTimeoutMs).toISOString(),
           receipt: receiptFor(
             command,
             fingerprint,
