@@ -44,6 +44,46 @@ replace_once(
 )
 
 replace_once(
+    'test/persistence/d1-sqlite-harness.ts',
+    '''  private failNextBatchAfterStatementCount: number | undefined;
+''',
+    '''  private failNextBatchAfterStatementCount: number | undefined;
+  private beforeNextBatchHook: (() => Promise<void>) | undefined;
+''',
+)
+replace_once(
+    'test/persistence/d1-sqlite-harness.ts',
+    '''  async batch(statements: D1PreparedStatementLike[]): Promise<D1ResultLike[]> {
+    this.database.exec('BEGIN IMMEDIATE;');''',
+    '''  async batch(statements: D1PreparedStatementLike[]): Promise<D1ResultLike[]> {
+    const beforeBatch = this.beforeNextBatchHook;
+    this.beforeNextBatchHook = undefined;
+    if (beforeBatch) await beforeBatch();
+    this.database.exec('BEGIN IMMEDIATE;');''',
+)
+replace_once(
+    'test/persistence/d1-sqlite-harness.ts',
+    '''  failNextBatchAfterStatements(statementCount: number): void {
+    if (!Number.isSafeInteger(statementCount) || statementCount < 0) {
+      throw new TypeError('statementCount must be a non-negative safe integer.');
+    }
+    this.failNextBatchAfterStatementCount = statementCount;
+  }
+''',
+    '''  failNextBatchAfterStatements(statementCount: number): void {
+    if (!Number.isSafeInteger(statementCount) || statementCount < 0) {
+      throw new TypeError('statementCount must be a non-negative safe integer.');
+    }
+    this.failNextBatchAfterStatementCount = statementCount;
+  }
+
+  beforeNextBatch(hook: () => Promise<void>): void {
+    this.beforeNextBatchHook = hook;
+  }
+''',
+)
+
+replace_once(
     'test/application/durable-retry-cancellation.test.ts',
     "import { createDurableApplicationDispatcher } from '../../src/application/durable-dispatcher.ts';\n",
     "import { createDurableApplicationDispatcher } from '../../src/application/durable-dispatcher.ts';\nimport { WorkspaceDurableObjectCoordinator } from '../../src/persistence/cloudflare/workspace-durable-object-coordinator.ts';\nimport type { WorkspaceMutationCoordinator } from '../../src/persistence/ports.ts';\n",
@@ -234,7 +274,7 @@ new_tests = r'''
     app.database.close();
   });
 
-  it('serializes stale CreateTask persistence behind CancelGoal across independent dispatchers', async () => {
+  it('serializes stale CreateTask persistence behind CancelGoal through one Workspace authority', async () => {
     const path = databasePath();
     const now = new Date('2026-08-30T21:00:00.000Z');
     let seed = await openDispatcher(path, 'cancel-race-seed', now);
@@ -250,7 +290,7 @@ new_tests = r'''
     const cancelPromise = cancelApp.dispatcher.dispatchCommand({
       protocolVersion: '0.1',
       command: 'CancelGoal',
-      commandId: 'cancel-race-goal',
+      commandId: 'cancel-race-goal-shared',
       workspaceId: 'ws-a',
       actor: seeded.systemActor,
       goalId: seeded.goal.id,
@@ -262,7 +302,7 @@ new_tests = r'''
     const createPromise = createApp.dispatcher.dispatchCommand({
       protocolVersion: '0.1',
       command: 'CreateTask',
-      commandId: 'cancel-race-create',
+      commandId: 'cancel-race-create-shared',
       workspaceId: 'ws-a',
       actor: seeded.systemActor,
       goalId: seeded.goal.id,
@@ -282,6 +322,168 @@ new_tests = r'''
     const goalTasks = snapshot?.tasks.filter((task) => task.goalId === seeded.goal.id) ?? [];
     expect(goalTasks).toHaveLength(1);
     expect(goalTasks.every((task) => task.status === 'cancelled')).toBe(true);
+    cancelApp.database.close();
+    createApp.database.close();
+  });
+
+  it('does not retain a success receipt when RetryTask loses its database CAS race', async () => {
+    const path = databasePath();
+    const now = new Date('2026-08-30T21:30:00.000Z');
+    let seed = await openDispatcher(path, 'retry-race-seed', now);
+    await seed.persistence.bootstrapWorkspace(workspace());
+    const seeded = await seedClaimedTask(seed.dispatcher, 'retry-race');
+    const failed = success<FailTaskResult>(
+      await seed.dispatcher.dispatchCommand({
+        protocolVersion: '0.1',
+        command: 'FailTask',
+        commandId: 'retry-race-fail',
+        workspaceId: 'ws-a',
+        actor: seeded.agentActor,
+        taskId: seeded.task.id,
+        sessionId: seeded.session.id,
+        leaseId: seeded.claim.lease.id,
+        fencingToken: seeded.claim.lease.fencingToken,
+        expectedTaskRevision: seeded.claim.task.revision,
+        reason: { code: 'execution.failed', summary: 'Prepare a retry race.' },
+        summary: 'Race retries.',
+        evidence: [],
+      }),
+    );
+    seed.database.close();
+
+    const first = await openDispatcher(path, 'retry-race-first', now);
+    const second = await openDispatcher(path, 'retry-race-second', now);
+    let firstArrivedResolve!: () => void;
+    let secondArrivedResolve!: () => void;
+    let releaseFirst!: () => void;
+    let releaseSecond!: () => void;
+    const firstArrived = new Promise<void>((resolve) => (firstArrivedResolve = resolve));
+    const secondArrived = new Promise<void>((resolve) => (secondArrivedResolve = resolve));
+    const firstRelease = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const secondRelease = new Promise<void>((resolve) => (releaseSecond = resolve));
+    first.database.beforeNextBatch(async () => {
+      firstArrivedResolve();
+      await firstRelease;
+    });
+    second.database.beforeNextBatch(async () => {
+      secondArrivedResolve();
+      await secondRelease;
+    });
+
+    const firstPromise = first.dispatcher.dispatchCommand({
+      protocolVersion: '0.1',
+      command: 'RetryTask',
+      commandId: 'retry-race-first-command',
+      workspaceId: 'ws-a',
+      actor: seeded.systemActor,
+      taskId: seeded.task.id,
+      expectedTaskRevision: failed.task.revision,
+    });
+    await firstArrived;
+    const secondPromise = second.dispatcher.dispatchCommand({
+      protocolVersion: '0.1',
+      command: 'RetryTask',
+      commandId: 'retry-race-second-command',
+      workspaceId: 'ws-a',
+      actor: seeded.systemActor,
+      taskId: seeded.task.id,
+      expectedTaskRevision: failed.task.revision,
+    });
+    await secondArrived;
+
+    releaseFirst();
+    success<Task>(await firstPromise);
+    releaseSecond();
+    const lost = await secondPromise;
+    expect('error' in lost && lost.error.code).toBe('REVISION_MISMATCH');
+    expect(await second.persistence.getCommandReceipt('ws-a', 'retry-race-second-command')).toBeUndefined();
+
+    const replayAttempt = await second.dispatcher.dispatchCommand({
+      protocolVersion: '0.1',
+      command: 'RetryTask',
+      commandId: 'retry-race-second-command',
+      correlationId: 'retry-race-replay',
+      workspaceId: 'ws-a',
+      actor: seeded.systemActor,
+      taskId: seeded.task.id,
+      expectedTaskRevision: failed.task.revision,
+    });
+    expect('error' in replayAttempt && replayAttempt.error.code).toBe('REVISION_MISMATCH');
+    expect(replayAttempt).not.toHaveProperty('replayed', true);
+    first.database.close();
+    second.database.close();
+  });
+
+  it('prevents a stale CreateTask batch from surviving beneath CancelGoal with independent coordinators', async () => {
+    const path = databasePath();
+    const now = new Date('2026-08-30T22:00:00.000Z');
+    let seed = await openDispatcher(path, 'cancel-db-race-seed', now);
+    await seed.persistence.bootstrapWorkspace(workspace());
+    const seeded = await seedClaimedTask(seed.dispatcher, 'cancel-db-race');
+    seed.database.close();
+
+    const cancelApp = await openDispatcher(path, 'cancel-db-race-controller', now);
+    const createApp = await openDispatcher(path, 'cancel-db-race-creator', now);
+    let cancelArrivedResolve!: () => void;
+    let releaseCancel!: () => void;
+    const cancelArrived = new Promise<void>((resolve) => (cancelArrivedResolve = resolve));
+    const cancelRelease = new Promise<void>((resolve) => (releaseCancel = resolve));
+    cancelApp.database.beforeNextBatch(async () => {
+      cancelArrivedResolve();
+      await cancelRelease;
+    });
+
+    const cancelPromise = cancelApp.dispatcher.dispatchCommand({
+      protocolVersion: '0.1',
+      command: 'CancelGoal',
+      commandId: 'cancel-db-race-goal',
+      workspaceId: 'ws-a',
+      actor: seeded.systemActor,
+      goalId: seeded.goal.id,
+      expectedGoalRevision: seeded.goal.revision,
+      reason: { code: 'controller.cancelled', summary: 'Race database task admission.' },
+    });
+    await cancelArrived;
+
+    const createdResponse = await createApp.dispatcher.dispatchCommand({
+      protocolVersion: '0.1',
+      command: 'CreateTask',
+      commandId: 'cancel-db-race-create',
+      workspaceId: 'ws-a',
+      actor: seeded.systemActor,
+      goalId: seeded.goal.id,
+      title: 'Concurrent Task',
+      objective: 'Either commit before cancellation or be rejected.',
+      acceptanceCriteria: ['Never survive under a cancelled Goal.'],
+      requiredCapabilities: [],
+      dependencyTaskIds: [],
+    });
+    const created = success<Task>(createdResponse);
+    releaseCancel();
+    const staleCancellation = await cancelPromise;
+    expect(staleCancellation).toHaveProperty('error');
+
+    const afterRace = await cancelApp.persistence.loadWorkspaceState('ws-a');
+    expect(afterRace?.goals.find((goal) => goal.id === seeded.goal.id)?.status).toBe('active');
+    expect(afterRace?.tasks.find((task) => task.id === created.id)?.status).toBe('ready');
+
+    const freshCancel = await createApp.dispatcher.dispatchCommand({
+      protocolVersion: '0.1',
+      command: 'CancelGoal',
+      commandId: 'cancel-db-race-goal-fresh',
+      workspaceId: 'ws-a',
+      actor: seeded.systemActor,
+      goalId: seeded.goal.id,
+      expectedGoalRevision: seeded.goal.revision,
+      reason: { code: 'controller.cancelled', summary: 'Retry with a fresh Task set.' },
+    });
+    const committed = success<CancelGoalResult>(freshCancel);
+    expect(committed.goal.status).toBe('cancelled');
+    expect(committed.tasks).toHaveLength(2);
+    const finalSnapshot = await createApp.persistence.loadWorkspaceState('ws-a');
+    const finalGoalTasks = finalSnapshot?.tasks.filter((task) => task.goalId === seeded.goal.id) ?? [];
+    expect(finalGoalTasks).toHaveLength(2);
+    expect(finalGoalTasks.every((task) => task.status === 'cancelled')).toBe(true);
     cancelApp.database.close();
     createApp.database.close();
   });
